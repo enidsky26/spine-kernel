@@ -1,0 +1,8 @@
+{
+    "files.associations": {
+        "*.cu": "cpp",
+        "genetlink.h": "c",
+        "netlink.h": "c",
+        "spine.h": "c"
+    }
+}
