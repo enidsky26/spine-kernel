@@ -48,8 +48,9 @@ static void nl_recv_msg(struct sk_buff *skb)
 	memcpy(&hdr, data_ptr, sizeof(struct SpineMsgHeader));
 	sockid = hdr.SocketId;
 
-	printk(KERN_INFO "Netlink received msg type: %d from PID: %d\n",
-	       hdr.Type, pid);
+	printk(KERN_INFO
+	       "Netlink received msg type: %d from PID: %d, socket fd: %d\n",
+	       hdr.Type, pid, sockid);
 	// we begin to parse payload, move pointer
 	data_ptr += sizeof(struct SpineMsgHeader);
 	if (hdr.Type == STATE) {
@@ -72,16 +73,16 @@ static void nl_recv_msg(struct sk_buff *skb)
 		return -1;
 	}
 	// kernel reply with one number
-	// nl_send_msg(reply_num, sockid, pid);
+	nl_send_msg(reply_num, sockid, pid);
 }
 
 void nl_send_msg(unsigned long data, u32 sockid, int pid)
 {
 	struct sk_buff *skb_out;
-	struct nlmsghdr *nlh;
+	struct nlmsghdr *nlh = NULL;
 
 	int res;
-	char message[30];
+	char message[50];
 	int reply_size;
 	reply_size = sizeof(struct SpineMsgHeader) + sizeof(struct ParamMsg);
 	char buf[reply_size];
@@ -89,16 +90,20 @@ void nl_send_msg(unsigned long data, u32 sockid, int pid)
 	struct SpineMsgHeader header = {
 		.Len = reply_size,
 		.Type = STATE,
-		.SocketId = 1,
+		.SocketId = sockid,
 	};
 	struct StateMsg ms = {
 		.number = data,
 	};
-	snprintf(message, 30, "hello from kernel, number: %lu", data);
-	memcpy(ms.message, message, 30);
+	// be careful when dealing with char array.
+	memset(message, 0, 50);
+	snprintf(message, 50, "hello from kernel, number: %lu!", data);
+	memcpy(ms.message, message, 50);
 
 	// copy header and message to buffer
+	memset(buf, 0, reply_size);
 	memcpy(buf, &header, sizeof(struct SpineMsgHeader));
+
 	memcpy(buf + sizeof(struct SpineMsgHeader), &ms,
 	       sizeof(struct StateMsg));
 
@@ -108,7 +113,7 @@ void nl_send_msg(unsigned long data, u32 sockid, int pid)
 		GFP_KERNEL // @flags: the type of memory to allocate.
 	);
 	if (!skb_out) {
-		printk(KERN_ERR "Failed to allocate new skb\n");
+		printk(KERN_INFO "Failed to allocate new skb\n");
 		return;
 	}
 
@@ -120,6 +125,12 @@ void nl_send_msg(unsigned long data, u32 sockid, int pid)
 			0 // @flags: message flags
 	);
 
+	if (nlh == NULL) {
+		printk(KERN_INFO "Failed to allocate new nl_header\n");
+		nlmsg_free(skb_out);
+		return;
+	}
+
 	//NETLINK_CB(skb_out).dst_group = 0;
 	memcpy(nlmsg_data(nlh), buf, reply_size);
 	printk(KERN_INFO "Sending proactive kernel message\n");
@@ -130,11 +141,12 @@ void nl_send_msg(unsigned long data, u32 sockid, int pid)
 		MYMGRP, // @group: multicast group id
 		GFP_KERNEL // @flags: allocation flags
 	);
-	res = nlmsg_unicast(nl_sk, // @sk: netlink socket to spread messages to
-			    skb_out, // @skb: netlink message as socket buffer
-			    pid);
+	// res = nlmsg_unicast(nl_sk, // @sk: netlink socket to spread messages to
+	// 		    skb_out, // @skb: netlink message as socket buffer
+	// 		    pid);
 	if (res < 0) {
-		printk(KERN_INFO "Error while sending to user: %d\n", res);
+		printk(KERN_INFO "Error while sending to user (pid: %d): %d\n",
+		       pid, res);
 		/* Wait 1 second. */
 		//mod_timer(&timer, jiffies + msecs_to_jiffies(1000));
 	} else {
