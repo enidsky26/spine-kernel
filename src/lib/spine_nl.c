@@ -49,7 +49,7 @@ int spine_nl_sk(spine_nl_recv_handler msg)
 	return 0;
 }
 
-void free_ccp_nl_sk(void)
+void free_spine_nl_sk(void)
 {
 	netlink_kernel_release(nl_sk);
 }

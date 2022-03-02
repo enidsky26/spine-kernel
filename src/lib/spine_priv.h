@@ -7,6 +7,18 @@
 #include <stdio.h>
 #endif
 
+#ifdef __KERNEL__
+    #define __INLINE__       inline
+    #define __CALLOC__(num_elements, block_size) kcalloc(num_elements, block_size, GFP_KERNEL)
+    #define __FREE__(ptr)    kfree(ptr)
+    #define CAS(a,o,n)       cmpxchg(a,o,n) == o
+#else
+    #define __INLINE__
+    #define __CALLOC__(num_elements, block_size) calloc(num_elements, block_size)
+    #define __FREE__(ptr)    free(ptr)
+    #define CAS(a,o,n)       __sync_bool_compare_and_swap(a,o,n)
+#endif
+
 #define log_fmt(level, fmt, args...)                                  \
     {                                                                 \
         char msg[80];                                                 \
