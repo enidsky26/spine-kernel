@@ -41,9 +41,6 @@ int read_header(struct SpineMsgHeader *hdr, char *buf)
 int serialize_header(char *buf, int bufsize, struct SpineMsgHeader *hdr)
 {
 	switch (hdr->Type) {
-	case CREATE:
-	case MEASURE:
-	case READY:
 	case STATE:
 	case PARAM:
 		break;

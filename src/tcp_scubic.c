@@ -24,30 +24,39 @@
  * this behaves the same as the original Reno.
  */
 
+#define pr_fmt(fmt) "[spine]: " fmt
+
+#include <linux/math64.h>
 #include <linux/mm.h>
 #include <linux/module.h>
-#include <linux/math64.h>
 #include <net/tcp.h>
 
-#define BICTCP_BETA_SCALE    1024	/* Scale factor beta calculation
+#include "spine.h"
+#include "spine_nl.h"
+#include "tcp_spine.h"
+
+#define BICTCP_BETA_SCALE                                                      \
+	1024 /* Scale factor beta calculation
 					 * max_cwnd = snd_cwnd * beta
 					 */
-#define	BICTCP_HZ		10	/* BIC HZ 2^10 = 1024 */
+#define BICTCP_HZ 10 /* BIC HZ 2^10 = 1024 */
 
 /* Two methods of hybrid slow start */
-#define HYSTART_ACK_TRAIN	0x1
-#define HYSTART_DELAY		0x2
+#define HYSTART_ACK_TRAIN 0x1
+#define HYSTART_DELAY 0x2
 
 /* Number of delay samples for detecting the increase of delay */
-#define HYSTART_MIN_SAMPLES	8
-#define HYSTART_DELAY_MIN	(4U<<3)
-#define HYSTART_DELAY_MAX	(16U<<3)
-#define HYSTART_DELAY_THRESH(x)	clamp(x, HYSTART_DELAY_MIN, HYSTART_DELAY_MAX)
+#define HYSTART_MIN_SAMPLES 8
+#define HYSTART_DELAY_MIN (4U << 3)
+#define HYSTART_DELAY_MAX (16U << 3)
+#define HYSTART_DELAY_THRESH(x) clamp(x, HYSTART_DELAY_MIN, HYSTART_DELAY_MAX)
+
+#define SCUBIC_PARAM_NUM 2
 
 static int fast_convergence __read_mostly = 1;
-static int beta __read_mostly = 717;	/* = 717/1024 (BICTCP_BETA_SCALE) */
+// static int beta __read_mostly = 717; /* = 717/1024 (BICTCP_BETA_SCALE) */
 static int initial_ssthresh __read_mostly;
-static int bic_scale __read_mostly = 41;
+// static int bic_scale __read_mostly = 41;
 static int tcp_friendliness __read_mostly = 1;
 
 static int hystart __read_mostly = 1;
@@ -55,52 +64,102 @@ static int hystart_detect __read_mostly = HYSTART_ACK_TRAIN | HYSTART_DELAY;
 static int hystart_low_window __read_mostly = 16;
 static int hystart_ack_delta __read_mostly = 2;
 
-static u32 cube_rtt_scale __read_mostly;
-static u32 beta_scale __read_mostly;
-static u64 cube_factor __read_mostly;
+/* we would make these parameters private for each flow. */
+// static u32 cube_rtt_scale __read_mostly;
+// static u32 beta_scale __read_mostly;
+// static u64 cube_factor __read_mostly;
+
+extern struct spine_datapath *kernel_datapath;
 
 /* Note parameters that are used for precomputing scale factors are read-only */
 module_param(fast_convergence, int, 0644);
 MODULE_PARM_DESC(fast_convergence, "turn on/off fast convergence");
-module_param(beta, int, 0644);
-MODULE_PARM_DESC(beta, "beta for multiplicative increase");
+// module_param(beta, int, 0644);
+// MODULE_PARM_DESC(beta, "beta for multiplicative increase");
 module_param(initial_ssthresh, int, 0644);
 MODULE_PARM_DESC(initial_ssthresh, "initial value of slow start threshold");
-module_param(bic_scale, int, 0444);
-MODULE_PARM_DESC(bic_scale, "scale (scaled by 1024) value for bic function (bic_scale/1024)");
+// module_param(bic_scale, int, 0444);
+// MODULE_PARM_DESC(
+// 	bic_scale,
+// 	"scale (scaled by 1024) value for bic function (bic_scale/1024)");
 module_param(tcp_friendliness, int, 0644);
 MODULE_PARM_DESC(tcp_friendliness, "turn on/off tcp friendliness");
 module_param(hystart, int, 0644);
 MODULE_PARM_DESC(hystart, "turn on/off hybrid slow start algorithm");
 module_param(hystart_detect, int, 0644);
-MODULE_PARM_DESC(hystart_detect, "hybrid slow start detection mechanisms"
+MODULE_PARM_DESC(hystart_detect,
+		 "hybrid slow start detection mechanisms"
 		 " 1: packet-train 2: delay 3: both packet-train and delay");
 module_param(hystart_low_window, int, 0644);
 MODULE_PARM_DESC(hystart_low_window, "lower bound cwnd for hybrid slow start");
 module_param(hystart_ack_delta, int, 0644);
-MODULE_PARM_DESC(hystart_ack_delta, "spacing between ack's indicating train (msecs)");
+MODULE_PARM_DESC(hystart_ack_delta,
+		 "spacing between ack's indicating train (msecs)");
 
 /* BIC TCP Parameters */
 struct bictcp {
-	u32	cnt;		/* increase cwnd by 1 after ACKs */
-	u32	last_max_cwnd;	/* last maximum snd_cwnd */
-	u32	last_cwnd;	/* the last snd_cwnd */
-	u32	last_time;	/* time when updated last_cwnd */
-	u32	bic_origin_point;/* origin point of bic function */
-	u32	bic_K;		/* time to origin point
+	u32 cnt; /* increase cwnd by 1 after ACKs */
+	u32 last_max_cwnd; /* last maximum snd_cwnd */
+	u32 last_cwnd; /* the last snd_cwnd */
+	u32 last_time; /* time when updated last_cwnd */
+	u32 bic_origin_point; /* origin point of bic function */
+	u32 bic_K; /* time to origin point
 				   from the beginning of the current epoch */
-	u32	delay_min;	/* min delay (msec << 3) */
-	u32	epoch_start;	/* beginning of an epoch */
-	u32	ack_cnt;	/* number of acks */
-	u32	tcp_cwnd;	/* estimated tcp cwnd */
-	u16	unused;
-	u8	sample_cnt;	/* number of samples to decide curr_rtt */
-	u8	found;		/* the exit point is found? */
-	u32	round_start;	/* beginning of each round */
-	u32	end_seq;	/* end_seq of the round */
-	u32	last_ack;	/* last time when the ACK spacing is close */
-	u32	curr_rtt;	/* the minimum rtt of current round */
+	u32 delay_min; /* min delay (msec << 3) */
+	u32 epoch_start; /* beginning of an epoch */
+	u32 ack_cnt; /* number of acks */
+	u32 tcp_cwnd; /* estimated tcp cwnd */
+	u16 unused;
+	u8 sample_cnt; /* number of samples to decide curr_rtt */
+	u8 found; /* the exit point is found? */
+	u32 round_start; /* beginning of each round */
+	u32 end_seq; /* end_seq of the round */
+	u32 last_ack; /* last time when the ACK spacing is close */
+	u32 curr_rtt; /* the minimum rtt of current round */
+
+	/* control parameters, which would be modified by user-space RL algorithm */
+	int beta;
+	int bic_scale;
+	u32 cube_rtt_scale;
+	u32 beta_scale;
+	u64 cube_factor;
+	// communication
+	struct spine_connection *conn;
 };
+
+void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
+{
+	struct sock *sk;
+	struct tcp_sock *tp;
+	struct bictcp *ca;
+	int i;
+	get_sock_from_spine(&sk, conn);
+	tp = tcp_sk(sk);
+	ca = inet_csk_ca(sk);
+
+	if (conn->flow_info.alg == SPINE_CUBIC) {
+		// TODO impl the specific functions to modify cubic parameters
+		if (num_fields != SCUBIC_PARAM_NUM) {
+			pr_info("Incorrect number of parameters");
+			return;
+		} else {
+			ca->bic_scale = *(params);
+			ca->beta = *(params + 1);
+		}
+	} else {
+		pr_info("Unknown internal congestion control algorithm, do nothing")
+	}
+}
+
+void bictcp_release(struct sock* sk) {
+	struct bictcp *ca = inet_csk_ca(sk);
+    if (ca->conn != NULL) {
+        pr_info("freeing connection %d", ca->conn->index);
+        spine_connection_free(kernel_datapath, ca->conn->index);
+    } else {
+        pr_info("already freed");
+    }
+}
 
 static inline void bictcp_reset(struct bictcp *ca)
 {
@@ -137,10 +196,42 @@ static inline void bictcp_hystart_reset(struct sock *sk)
 	ca->sample_cnt = 0;
 }
 
+/* This function should be called once we modify bic_scale and beta
+ * to update other scaled parameters
+ */
+static inline void bictcp_update_params(struct bictcp *ca)
+{
+	/* Precompute a bunch of the scaling factors that are used per-packet
+	 * based on SRTT of 100ms
+	 */
+	ca->beta_scale = 8 * (BICTCP_BETA_SCALE + ca->beta) / 3 /
+			 (BICTCP_BETA_SCALE - ca->beta);
+
+	ca->cube_rtt_scale = (ca->bic_scale * 10); /* 1024*c/rtt */
+
+	/* calculate the "K" for (wmax-cwnd) = c/rtt * K^3
+	 *  so K = cubic_root( (wmax-cwnd)*rtt/c )
+	 * the unit of K is bictcp_HZ=2^10, not HZ
+	 *
+	 *  c = bic_scale >> 10
+	 *  rtt = 100ms
+	 *
+	 * the following code has been designed and tested for
+	 * cwnd < 1 million packets
+	 * RTT < 100 seconds
+	 * HZ < 1,000,00  (corresponding to 10 nano-second)
+	 */
+
+	/* 1/c * 2^2*bictcp_HZ * srtt */
+	ca->cube_factor = 1ull << (10 + 3 * BICTCP_HZ); /* 2^40 */
+
+	/* divide by bic_scale and by constant Srtt (100ms) */
+	do_div(ca->cube_factor, ca->bic_scale * 10);
+}
+
 static void bictcp_init(struct sock *sk)
 {
 	struct bictcp *ca = inet_csk_ca(sk);
-
 	bictcp_reset(ca);
 
 	if (hystart)
@@ -148,6 +239,39 @@ static void bictcp_init(struct sock *sk)
 
 	if (!hystart && initial_ssthresh)
 		tcp_sk(sk)->snd_ssthresh = initial_ssthresh;
+
+	/* init control parameters as what cubic did */
+	ca->bic_scale = 41;
+	ca->beta = 717; /* = 717/1024 (BICTCP_BETA_SCALE) */
+	bictcp_update_params(ca);
+
+	/* create spine flow and register parameters */
+	struct spine_datapath_info dp_info = {
+		.init_cwnd = tp->snd_cwnd * tp->mss_cache,
+		.mss = tp->mss_cache,
+		.src_ip = tp->inet_conn.icsk_inet.inet_saddr,
+		.src_port = tp->inet_conn.icsk_inet.inet_sport,
+		.dst_ip = tp->inet_conn.icsk_inet.inet_daddr,
+		.dst_port = tp->inet_conn.icsk_inet.inet_dport,
+		.congAlg = "scubic",
+		.alg = SPINE_CUBIC,
+	};
+	pr_info("New spine flow");
+
+	ca->conn =
+		spine_connection_start(kernel_datapath, (void *)sk, &dp_info);
+	if (ca->conn == NULL) {
+		pr_info("start connection failed\n");
+	} else {
+		pr_info("starting connection %d", ca->conn->index);
+	}
+
+	// if no ecn support
+	if (!(tp->ecn_flags & TCP_ECN_OK)) {
+		INET_ECN_dontxmit(sk);
+	}
+
+	cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
 }
 
 static void bictcp_cwnd_event(struct sock *sk, enum tcp_ca_event event)
@@ -187,14 +311,14 @@ static u32 cubic_root(u64 a)
 	 *   cbrt(x) = (v[x] + 10) >> 6
 	 */
 	static const u8 v[] = {
-		/* 0x00 */    0,   54,   54,   54,  118,  118,  118,  118,
-		/* 0x08 */  123,  129,  134,  138,  143,  147,  151,  156,
-		/* 0x10 */  157,  161,  164,  168,  170,  173,  176,  179,
-		/* 0x18 */  181,  185,  187,  190,  192,  194,  197,  199,
-		/* 0x20 */  200,  202,  204,  206,  209,  211,  213,  215,
-		/* 0x28 */  217,  219,  221,  222,  224,  225,  227,  229,
-		/* 0x30 */  231,  232,  234,  236,  237,  239,  240,  242,
-		/* 0x38 */  244,  245,  246,  248,  250,  251,  252,  254,
+		/* 0x00 */ 0,	54,  54,  54,  118, 118, 118, 118,
+		/* 0x08 */ 123, 129, 134, 138, 143, 147, 151, 156,
+		/* 0x10 */ 157, 161, 164, 168, 170, 173, 176, 179,
+		/* 0x18 */ 181, 185, 187, 190, 192, 194, 197, 199,
+		/* 0x20 */ 200, 202, 204, 206, 209, 211, 213, 215,
+		/* 0x28 */ 217, 219, 221, 222, 224, 225, 227, 229,
+		/* 0x30 */ 231, 232, 234, 236, 237, 239, 240, 242,
+		/* 0x38 */ 244, 245, 246, 248, 250, 251, 252, 254,
 	};
 
 	b = fls64(a);
@@ -227,7 +351,7 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
 	u32 delta, bic_target, max_cnt;
 	u64 offs, t;
 
-	ca->ack_cnt += acked;	/* count the number of ACKed packets */
+	ca->ack_cnt += acked; /* count the number of ACKed packets */
 
 	if (ca->last_cwnd == cwnd &&
 	    (s32)(tcp_jiffies32 - ca->last_time) <= HZ / 32)
@@ -244,9 +368,9 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
 	ca->last_time = tcp_jiffies32;
 
 	if (ca->epoch_start == 0) {
-		ca->epoch_start = tcp_jiffies32;	/* record beginning */
-		ca->ack_cnt = acked;			/* start counting */
-		ca->tcp_cwnd = cwnd;			/* syn with cubic */
+		ca->epoch_start = tcp_jiffies32; /* record beginning */
+		ca->ack_cnt = acked; /* start counting */
+		ca->tcp_cwnd = cwnd; /* syn with cubic */
 
 		if (ca->last_max_cwnd <= cwnd) {
 			ca->bic_K = 0;
@@ -255,8 +379,8 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
 			/* Compute new K based on
 			 * (wmax-cwnd) * (srtt>>3 / HZ) / c * 2^(3*bictcp_HZ)
 			 */
-			ca->bic_K = cubic_root(cube_factor
-					       * (ca->last_max_cwnd - cwnd));
+			ca->bic_K = cubic_root(ca->cube_factor *
+					       (ca->last_max_cwnd - cwnd));
 			ca->bic_origin_point = ca->last_max_cwnd;
 		}
 	}
@@ -281,23 +405,24 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
 	t <<= BICTCP_HZ;
 	do_div(t, HZ);
 
-	if (t < ca->bic_K)		/* t - K */
+	if (t < ca->bic_K) /* t - K */
 		offs = ca->bic_K - t;
 	else
 		offs = t - ca->bic_K;
 
 	/* c/rtt * (t-K)^3 */
-	delta = (cube_rtt_scale * offs * offs * offs) >> (10+3*BICTCP_HZ);
-	if (t < ca->bic_K)                            /* below origin*/
+	delta = (ca->cube_rtt_scale * offs * offs * offs) >>
+		(10 + 3 * BICTCP_HZ);
+	if (t < ca->bic_K) /* below origin*/
 		bic_target = ca->bic_origin_point - delta;
-	else                                          /* above origin*/
+	else /* above origin*/
 		bic_target = ca->bic_origin_point + delta;
 
 	/* cubic function - calc bictcp_cnt*/
 	if (bic_target > cwnd) {
 		ca->cnt = cwnd / (bic_target - cwnd);
 	} else {
-		ca->cnt = 100 * cwnd;              /* very small increment*/
+		ca->cnt = 100 * cwnd; /* very small increment*/
 	}
 
 	/*
@@ -305,20 +430,20 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
 	 * when the available bandwidth is still unknown.
 	 */
 	if (ca->last_max_cwnd == 0 && ca->cnt > 20)
-		ca->cnt = 20;	/* increase cwnd 5% per RTT */
+		ca->cnt = 20; /* increase cwnd 5% per RTT */
 
 tcp_friendliness:
 	/* TCP Friendly */
 	if (tcp_friendliness) {
-		u32 scale = beta_scale;
+		u32 scale = ca->beta_scale;
 
 		delta = (cwnd * scale) >> 3;
-		while (ca->ack_cnt > delta) {		/* update tcp cwnd */
+		while (ca->ack_cnt > delta) { /* update tcp cwnd */
 			ca->ack_cnt -= delta;
 			ca->tcp_cwnd++;
 		}
 
-		if (ca->tcp_cwnd > cwnd) {	/* if bic is slower than tcp */
+		if (ca->tcp_cwnd > cwnd) { /* if bic is slower than tcp */
 			delta = ca->tcp_cwnd - cwnd;
 			max_cnt = cwnd / delta;
 			if (ca->cnt > max_cnt)
@@ -336,6 +461,20 @@ static void bictcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct bictcp *ca = inet_csk_ca(sk);
+	struct spine_connection *conn = ca->conn;
+	int ok;
+
+	/* call spine to update parameters if needed */
+	if (conn != NULL) {
+		// if there are staged parameters update, then
+		// corressponding params inside ca would be updated
+		ok = spine_invoke(conn);
+		if (ok < 0) {
+			pr_info("fail to cal spine_invoke: %d\n", ok);
+		} else {
+			bictcp_update_params(ca);
+		}
+	}
 
 	if (!tcp_is_cwnd_limited(sk))
 		return;
@@ -356,12 +495,13 @@ static u32 bictcp_recalc_ssthresh(struct sock *sk)
 	const struct tcp_sock *tp = tcp_sk(sk);
 	struct bictcp *ca = inet_csk_ca(sk);
 
-	ca->epoch_start = 0;	/* end of epoch */
+	ca->epoch_start = 0; /* end of epoch */
 
 	/* Wmax and fast convergence */
 	if (tp->snd_cwnd < ca->last_max_cwnd && fast_convergence)
-		ca->last_max_cwnd = (tp->snd_cwnd * (BICTCP_BETA_SCALE + beta))
-			/ (2 * BICTCP_BETA_SCALE);
+		ca->last_max_cwnd =
+			(tp->snd_cwnd * (BICTCP_BETA_SCALE + beta)) /
+			(2 * BICTCP_BETA_SCALE);
 	else
 		ca->last_max_cwnd = tp->snd_cwnd;
 
@@ -412,8 +552,9 @@ static void hystart_update(struct sock *sk, u32 delay)
 
 			ca->sample_cnt++;
 		} else {
-			if (ca->curr_rtt > ca->delay_min +
-			    HYSTART_DELAY_THRESH(ca->delay_min >> 3)) {
+			if (ca->curr_rtt >
+			    ca->delay_min +
+				    HYSTART_DELAY_THRESH(ca->delay_min >> 3)) {
 				ca->found |= HYSTART_DELAY;
 				NET_INC_STATS(sock_net(sk),
 					      LINUX_MIB_TCPHYSTARTDELAYDETECT);
@@ -457,72 +598,79 @@ static void bictcp_acked(struct sock *sk, const struct ack_sample *sample)
 		hystart_update(sk, delay);
 }
 
-static inline void natcp_update_by_app(struct sock *sk)
-{
-	struct tcp_sock *tp = tcp_sk(sk);
-	// printk("[TCP Cubic] natcp_update_by_app:snd_cwnd:%d, cwnd_clamp:%d\n",
-	// 		tp->snd_cwnd,tp->snd_cwnd_clamp);
-	tp->snd_cwnd = min(tp->snd_cwnd, tp->snd_cwnd_clamp);
-}
-
 static struct tcp_congestion_ops cubictcp __read_mostly = {
-	.init		= bictcp_init,
-	.ssthresh	= bictcp_recalc_ssthresh,
-	.cong_avoid	= bictcp_cong_avoid,
-	.set_state	= bictcp_state,
-	.undo_cwnd	= tcp_reno_undo_cwnd,
-	.cwnd_event	= bictcp_cwnd_event,
-	//S.A: To support NATCP
-	.update_by_app	= natcp_update_by_app,
-	.pkts_acked     = bictcp_acked,
-	.owner		= THIS_MODULE,
-	.name		= "cubic",
+	.init = bictcp_init,
+	.release = bictcp_release,
+	.ssthresh = bictcp_recalc_ssthresh,
+	.cong_avoid = bictcp_cong_avoid,
+	.set_state = bictcp_state,
+	.undo_cwnd = tcp_reno_undo_cwnd,
+	.cwnd_event = bictcp_cwnd_event,
+	.pkts_acked = bictcp_acked,
+	.owner = THIS_MODULE,
+	.name = "scubic",
 };
 
 static int __init cubictcp_register(void)
 {
+	int ret;
 	BUILD_BUG_ON(sizeof(struct bictcp) > ICSK_CA_PRIV_SIZE);
 
-	/* Precompute a bunch of the scaling factors that are used per-packet
-	 * based on SRTT of 100ms
+	/* Init spine-related structs inspired by CCP
+	 * kernel_datapath
+	 * spine connections
 	 */
+	kernel_datapath = (struct spine_datapath *)kmalloc(
+		sizeof(struct spine_datapath), GFP_KERNEL);
+	if (!kernel_datapath) {
+		pr_info("could not allocate spine_datapath\n");
+		return -1;
+	}
+	kernel_datapath->max_connections = MAX_ACTIVE_FLOWS;
+	kernel_datapath->spine_active_connections =
+		(struct spine_connection *)kzalloc(
+			sizeof(struct spine_connection) * MAX_ACTIVE_FLOWS,
+			GFP_KERNEL);
+	if (!kernel_datapath->spine_active_connections) {
+		pr_info("could not allocate spine_connections\n");
+		return -2;
+	}
+	kernel_datapath->log = &spine_log;
+	kernel_datapath->set_params = &spine_set_params;
 
-	beta_scale = 8*(BICTCP_BETA_SCALE+beta) / 3
-		/ (BICTCP_BETA_SCALE - beta);
-
-	cube_rtt_scale = (bic_scale * 10);	/* 1024*c/rtt */
-
-	/* calculate the "K" for (wmax-cwnd) = c/rtt * K^3
-	 *  so K = cubic_root( (wmax-cwnd)*rtt/c )
-	 * the unit of K is bictcp_HZ=2^10, not HZ
-	 *
-	 *  c = bic_scale >> 10
-	 *  rtt = 100ms
-	 *
-	 * the following code has been designed and tested for
-	 * cwnd < 1 million packets
-	 * RTT < 100 seconds
-	 * HZ < 1,000,00  (corresponding to 10 nano-second)
+	/* Here we need to add a IPC for receiving messages from user space 
+	 * RL controller.
 	 */
-
-	/* 1/c * 2^2*bictcp_HZ * srtt */
-	cube_factor = 1ull << (10+3*BICTCP_HZ); /* 2^40 */
-
-	/* divide by bic_scale and by constant Srtt (100ms) */
-	do_div(cube_factor, bic_scale * 10);
+	ret = spine_nl_sk(spine_read_msg);
+	if (ret < 0) {
+		pr_info("cannot init spine ipc\n");
+		return -3;
+	}
+	// register current sock in spine datapath
+	ret = spine_init(kernel_datapath, 0);
+	if (ret < 0) {
+		pr_info("fail to init spine datapath\n");
+		free_spine_nl_sk();
+		return -4;
+	}
+	pr_info("spine %s init\n", cubictcp.name);
 
 	return tcp_register_congestion_control(&cubictcp);
 }
 
 static void __exit cubictcp_unregister(void)
 {
-	tcp_unregister_congestion_control(&cubictcp);
+	free_spine_nl_sk();
+	kfree(kernel_datapath->ccp_active_connections);
+    kfree(kernel_datapath);
+    pr_info("spine exit\n");
+    tcp_unregister_congestion_control(&cubictcp);
 }
 
 module_init(cubictcp_register);
 module_exit(cubictcp_unregister);
 
-MODULE_AUTHOR("Sangtae Ha, Stephen Hemminger");
+MODULE_AUTHOR("Sangtae Ha, Stephen Hemminger, Xudong Liao");
 MODULE_LICENSE("GPL");
-MODULE_DESCRIPTION("CUBIC TCP");
+MODULE_DESCRIPTION("Hi-RL CUBIC TCP");
 MODULE_VERSION("2.3");

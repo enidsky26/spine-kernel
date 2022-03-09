@@ -1,6 +1,9 @@
 #ifndef SPINE_PRIV_H
 #define SPINE_PRIV_H
 
+#include "ccp.h"
+#include "serialize.h"
+
 #ifdef __KERNEL__
 #include <linux/kernel.h>
 #else
@@ -59,4 +62,21 @@
 #define spine_warn(fmt, args...)
 #endif
 
+struct staged_update {
+    bool control_is_pending[MAX_CONTROL_REG];
+    u64 control_registers[MAX_CONTROL_REG];
+};
+
+struct spine_priv_state {
+    struct staged_update pending_update;
+};
+
+__INLINE__ struct spine_priv_state *get_spine_priv_state(struct spine_connection *conn) {
+    return (struct spine_priv_state*) conn->state;
+}
+
+int send_conn_create(struct spine_datapath *datapath,
+		     struct spine_connection *conn);
+
+void free_spine_priv_state(struct spine_connection *conn);
 #endif

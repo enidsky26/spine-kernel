@@ -19,6 +19,6 @@ void free_spine_nl_sk(void);
 
 /* Send serialized message to userspace CCP
  */
-int nl_sendmsg(struct ccp_datapath *dp, char *msg, int msg_size);
+int nl_sendmsg(struct spine_datapath *dp, char *msg, int msg_size);
 
 #endif

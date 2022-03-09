@@ -1,4 +1,4 @@
-#include "spine-nl.h"
+#include "spine_nl.h"
 #include <net/tcp.h>
 
 #define SPINE_MULTICAST_GROUP 22
