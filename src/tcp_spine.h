@@ -1,7 +1,9 @@
 #ifndef TCP_SPINE_H
 #define TCP_SPINE_H
 
-#include "spine.h"
+#include "lib/spine.h"
+
+#include <linux/kernel.h>
 #include <linux/net.h>
 #include <linux/tcp.h>
 #include <net/tcp.h>
@@ -28,7 +30,7 @@ struct spine {
 #define S_TO_US 1000000
 
 static inline void get_sock_from_spine(struct sock **sk,
-				       struct ccp_connection *conn)
+				       struct spine_connection *conn)
 {
 	*sk = (struct sock *)spine_get_impl(conn);
 }
@@ -36,8 +38,9 @@ static inline void get_sock_from_spine(struct sock **sk,
 void spine_set_pacing_rate(struct sock *sk, uint32_t rate);
 void spine_log(struct spine_datapath *dp, enum spine_log_level level,
 	       const char *msg, int msg_size);
-static u64 spine_now(void);
-static u64 spine_since(void);
-static u64 spine_after(void);
+
+u64 spine_now(void);
+u64 spine_since(u64 then);
+u64 spine_after(u64 us);
 
 #endif

@@ -1,4 +1,6 @@
 #include "spine_nl.h"
+
+#include <linux/kernel.h>
 #include <net/tcp.h>
 
 #define SPINE_MULTICAST_GROUP 22

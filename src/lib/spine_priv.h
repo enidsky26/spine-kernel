@@ -1,13 +1,25 @@
 #ifndef SPINE_PRIV_H
 #define SPINE_PRIV_H
 
-#include "ccp.h"
 #include "serialize.h"
+#include "spine.h"
 
 #ifdef __KERNEL__
 #include <linux/kernel.h>
 #else
 #include <stdio.h>
+#endif
+
+#ifdef __KERNEL__
+#define FMT_U64 "%llu"
+#define FMT_U32 "%lu"
+#else
+#if defined(__APPLE__)
+#define FMT_U64 "%llu"
+#else
+#define FMT_U64 "%lu"
+#endif
+#define FMT_U32 "%u"
 #endif
 
 #ifdef __KERNEL__
@@ -69,14 +81,12 @@ struct staged_update {
 };
 
 struct spine_priv_state {
-	bool sent_create, struct staged_update pending_update;
+	bool sent_create;
+	struct staged_update pending_update;
 };
 
 __INLINE__ struct spine_priv_state *
-get_spine_priv_state(struct spine_connection *conn)
-{
-	return (struct spine_priv_state *)conn->state;
-}
+get_spine_priv_state(struct spine_connection *conn);
 
 int send_conn_create(struct spine_datapath *datapath,
 		     struct spine_connection *conn);

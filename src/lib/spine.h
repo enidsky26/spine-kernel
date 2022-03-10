@@ -7,6 +7,7 @@
 #else
 #include <stdbool.h>
 #include <stdint.h>
+#include <pthread.h>
 #endif
 
 typedef uint8_t u8;
@@ -77,6 +78,7 @@ struct spine_datapath_info {
 	u32 src_port;
 	u32 dst_ip;
 	u32 dst_port;
+	spine_internal_alg alg;
 	char congAlg[MAX_CONG_ALG_SIZE];
 };
 
@@ -132,6 +134,7 @@ struct spine_datapath {
 	struct spine_connection *spine_active_connections;
 	u64 fto_us;
 	u64 last_msg_sent;
+	bool _in_fallback;
 
 	// datapath-specific global state, such as: for sock* sk
 	void *impl;
@@ -151,9 +154,9 @@ void spine_connection_free(struct spine_datapath *datapath, u16 sid);
 
 
 // real underlying datapath implementation: linux kernel socket or quic or ...
-void *spine_get_impl(struct ccp_connection *conn);
+void *spine_get_impl(struct spine_connection *conn);
 
-void spine_set_impl(struct ccp_connection *conn, void *ptr);
+void spine_set_impl(struct spine_connection *conn, void *ptr);
 
 
 // communication 

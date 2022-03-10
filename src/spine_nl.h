@@ -1,7 +1,7 @@
 #ifndef SPINE_NL_H
 #define SPINE_NL_H
 
-#include "spine.h"
+#include "lib/spine.h"
 
 /* -- netlink related --- */
 typedef int (*spine_nl_recv_handler)(struct spine_datapath *datapath, char *msg,

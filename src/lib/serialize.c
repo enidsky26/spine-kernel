@@ -1,5 +1,7 @@
 #include "serialize.h"
 #include "spine.h"
+#include "spine_err.h"
+#include "spine_priv.h"
 
 #ifdef __KERNEL__
 #include <linux/slab.h> // kmalloc
@@ -45,8 +47,8 @@ int serialize_header(char *buf, int bufsize, struct SpineMsgHeader *hdr)
 	switch (hdr->Type) {
 	case CREATE:
 	case STATE:
-    case MEASURE:
-    case READY:
+	case MEASURE:
+	case READY:
 		break;
 	default:
 		return -1;
@@ -159,21 +161,20 @@ int write_measure_msg(char *buf, int bufsize, u32 sid, u32 program_uid,
 	return hdr.Len;
 }
 
-int check_update_fields_msg(
-    struct spine_datapath *datapath,
-    struct SpineMsgHeader *hdr,
-    u32 *num_updates,
-    char *buf
-) {
-    if (hdr->Type != UPDATE_FIELDS) {
-        spine_warn("check_update_fields_msg: hdr.Type != UPDATE_FIELDS")
-        return LIBCCP_UPDATE_TYPE_MISMATCH;
-    }
+int check_update_fields_msg(struct spine_datapath *datapath,
+			    struct SpineMsgHeader *hdr, u32 *num_updates,
+			    char *buf)
+{
+	if (hdr->Type != UPDATE_FIELDS) {
+		spine_warn(
+			"check_update_fields_msg: hdr.Type != UPDATE_FIELDS");
+		return LIBCCP_UPDATE_TYPE_MISMATCH;
+	}
 
-    *num_updates = (u32)*buf;
-    if (*num_updates > MAX_MUTABLE_REG) {
-        spine_warn("Too many updates!: %u\n", *num_updates);
-        return LIBCCP_UPDATE_TOO_MANY;
-    }
-    return sizeof(u32);
+	*num_updates = (u32)*buf;
+	if (*num_updates > MAX_MUTABLE_REG) {
+		spine_warn("Too many updates!: %u\n", *num_updates);
+		return LIBCCP_UPDATE_TOO_MANY;
+	}
+	return sizeof(u32);
 }

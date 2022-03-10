@@ -31,7 +31,7 @@
 #include <linux/module.h>
 #include <net/tcp.h>
 
-#include "spine.h"
+#include "lib/spine.h"
 #include "spine_nl.h"
 #include "tcp_spine.h"
 
@@ -70,6 +70,7 @@ static int hystart_ack_delta __read_mostly = 2;
 // static u64 cube_factor __read_mostly;
 
 extern struct spine_datapath *kernel_datapath;
+extern struct timespec64 tzero;
 
 /* Note parameters that are used for precomputing scale factors are read-only */
 module_param(fast_convergence, int, 0644);
@@ -147,7 +148,7 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 			ca->beta = *(params + 1);
 		}
 	} else {
-		pr_info("Unknown internal congestion control algorithm, do nothing")
+		pr_info("Unknown internal congestion control algorithm, do nothing");
 	}
 }
 
@@ -232,6 +233,7 @@ static inline void bictcp_update_params(struct bictcp *ca)
 
 static void bictcp_init(struct sock *sk)
 {
+	struct tcp_sock *tp = tcp_sk(sk);
 	struct bictcp *ca = inet_csk_ca(sk);
 	bictcp_reset(ca);
 
@@ -501,12 +503,12 @@ static u32 bictcp_recalc_ssthresh(struct sock *sk)
 	/* Wmax and fast convergence */
 	if (tp->snd_cwnd < ca->last_max_cwnd && fast_convergence)
 		ca->last_max_cwnd =
-			(tp->snd_cwnd * (BICTCP_BETA_SCALE + beta)) /
+			(tp->snd_cwnd * (BICTCP_BETA_SCALE + ca->beta)) /
 			(2 * BICTCP_BETA_SCALE);
 	else
 		ca->last_max_cwnd = tp->snd_cwnd;
 
-	return max((tp->snd_cwnd * beta) / BICTCP_BETA_SCALE, 2U);
+	return max((tp->snd_cwnd * ca->beta) / BICTCP_BETA_SCALE, 2U);
 }
 
 static void bictcp_state(struct sock *sk, u8 new_state)
@@ -668,7 +670,7 @@ static int __init cubictcp_register(void)
 static void __exit cubictcp_unregister(void)
 {
 	free_spine_nl_sk();
-	kfree(kernel_datapath->ccp_active_connections);
+	kfree(kernel_datapath->spine_active_connections);
 	kfree(kernel_datapath);
 	pr_info("spine exit\n");
 	tcp_unregister_congestion_control(&cubictcp);

@@ -17,12 +17,14 @@
 int spine_init(struct spine_datapath *datapath, u32 id)
 {
 	int ok;
+	char ready_msg[READY_MSG_SIZE];
+	spine_trace("spine init");
 	if (datapath == NULL || datapath->set_params == NULL ||
 	    datapath->now == NULL || datapath->since_usecs == NULL ||
 	    datapath->after_usecs == NULL ||
 	    datapath->spine_active_connections == NULL ||
 	    datapath->max_connections == 0 || datapath->fto_us == 0) {
-		return SPINE_ARGS_ERR;
+		return SPINE_MISSING_ARG;
 	}
 	// send ready message
 	ok = write_ready_msg(ready_msg, READY_MSG_SIZE, id);
@@ -43,7 +45,7 @@ int spine_init(struct spine_datapath *datapath, u32 id)
 }
 
 void spine_free(struct spine_datapath *datapath) {
-	void(datapath);
+	(void)(datapath);
 }
 
 void spine_conn_create_success(struct spine_priv_state *state)
@@ -167,14 +169,27 @@ int spine_invoke(struct spine_connection *conn)
 	u64 params[MAX_CONTROL_REG];
 
 	if (conn == NULL) {
-		return SPINE_NULL;
+		return SPINE_NULL_ARG;
 	}
 	datapath = conn->datapath;
 	state = get_spine_priv_state(conn);
 
 	// check init status
 	if (!(state->sent_create)) {
-	}
+        // try contacting the CCP again
+        // index of pointer back to this sock for IPC callback
+        spine_trace("%s retx create message\n", __FUNCTION__);
+        ret = send_conn_create(datapath, conn);
+        if (ret < 0) {
+            if (!datapath->_in_fallback) {
+                spine_warn("failed to retx create message: %d\n", ret);
+            }
+        } else {
+            spine_conn_create_success(state);
+        }
+        return SPINE_OK;
+    }
+
 	// we assume consequent parameters
 	for (i = 0; i < MAX_CONTROL_REG; i++) {
 		if (state->pending_update.control_is_pending[i]) {
@@ -187,11 +202,11 @@ int spine_invoke(struct spine_connection *conn)
 	}
 	// enforce parameters to datapath
 	if (datapath->set_params) {
-		datapath->set_params(conn, &params, num_params);
+		datapath->set_params(conn, params, num_params);
 	}
 	// clear staged status
 	memset(&state->pending_update, 0, sizeof(struct staged_update));
-	return SPINE_OK;
+	return ret;
 }
 
 int send_conn_create(struct spine_datapath *datapath,

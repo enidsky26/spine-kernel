@@ -133,53 +133,6 @@ struct __attribute__((packed, aligned(4))) MeasureMsg {
 int write_measure_msg(char *buf, int bufsize, u32 sid, u32 program_uid,
 		      u64 *msg_fields, u8 num_fields);
 
-/* INSTRUCTION
- * 1 u8 for opcode
- * 3 sets of {u8, u32} for each of the result register, left register and right register
- */
-struct __attribute__((packed, aligned(4))) InstructionMsg {
-	u8 opcode;
-	u8 result_reg_type;
-	u32 result_register;
-	u8 left_reg_type;
-	u32 left_register;
-	u8 right_reg_type;
-	u32 right_register;
-};
-
-/* ExpressionMsg: 4 u32s
- * start of expression condition instr ID
- * number of expression condition instrs
- * start of event body instr ID
- * number of event body instrs
- */
-struct __attribute__((packed, aligned(4))) ExpressionMsg {
-	u32 cond_start_idx;
-	u32 num_cond_instrs;
-	u32 event_start_idx;
-	u32 num_event_instrs;
-};
-
-struct __attribute__((packed, aligned(4))) InstallExpressionMsgHdr {
-	u32 program_uid;
-	u32 num_expressions;
-	u32 num_instructions;
-};
-
-/* return: size of InstallExpressionMsgHeader
- * copies from buffer into InstallExpressionMsgHdr struct.
- * also checks whether the number of instructions or expressions is too large.
- * InstallExprMessage:
- * {
- *  struct InstallExpressionMsgHeader (3 u32s)
- *  ExpressionMsg[num_expressions]
- *  InstructionMsg[num_instructions]
- * }
- */
-int read_install_expr_msg_hdr(struct ccp_datapath *datapath,
-			      struct SpineMsgHeader *hdr,
-			      struct InstallExpressionMsgHdr *expr_msg_info,
-			      char *buf);
 
 struct __attribute__((packed, aligned(1))) UpdateField {
 	u8 reg_type;
