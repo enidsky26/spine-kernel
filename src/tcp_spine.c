@@ -31,3 +31,28 @@ inline void spine_set_pacing_rate(struct sock *sk, uint32_t rate)
 {
 	sk->sk_pacing_rate = rate;
 }
+
+struct timespec64 tzero;
+static u64 spine_now(void) {
+    struct timespec64 now, diff;
+    ktime_get_real_ts64(&now);
+    diff = timespec64_sub(now, tzero);
+    return timespec64_to_ns(&diff);
+}
+
+static u64 spine_since(u64 then) {
+    struct timespec64 now, then_ts, diff;
+    ktime_get_real_ts64(&now);
+    then_ts = tzero;
+    timespec64_add_ns(&then_ts, then);
+    diff = timespec64_sub(now, then_ts);
+    return timespec64_to_ns(&diff) / NSEC_PER_USEC;
+}
+
+static u64 spine_after(u64 us) {
+    struct timespec64 now;
+    ktime_get_real_ts64(&now);
+    now = timespec64_sub(now, tzero);
+    timespec64_add_ns(&now, us * NSEC_PER_USEC);
+    return timespec64_to_ns(&now);
+}

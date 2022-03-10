@@ -151,14 +151,15 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 	}
 }
 
-void bictcp_release(struct sock* sk) {
+void bictcp_release(struct sock *sk)
+{
 	struct bictcp *ca = inet_csk_ca(sk);
-    if (ca->conn != NULL) {
-        pr_info("freeing connection %d", ca->conn->index);
-        spine_connection_free(kernel_datapath, ca->conn->index);
-    } else {
-        pr_info("already freed");
-    }
+	if (ca->conn != NULL) {
+		pr_info("freeing connection %d", ca->conn->index);
+		spine_connection_free(kernel_datapath, ca->conn->index);
+	} else {
+		pr_info("already freed");
+	}
 }
 
 static inline void bictcp_reset(struct bictcp *ca)
@@ -615,6 +616,7 @@ static int __init cubictcp_register(void)
 {
 	int ret;
 	BUILD_BUG_ON(sizeof(struct bictcp) > ICSK_CA_PRIV_SIZE);
+	ktime_get_real_ts64(&tzero);
 
 	/* Init spine-related structs inspired by CCP
 	 * kernel_datapath
@@ -626,6 +628,11 @@ static int __init cubictcp_register(void)
 		pr_info("could not allocate spine_datapath\n");
 		return -1;
 	}
+	kernel_datapath->now = &spine_now;
+	kernel_datapath->since_usecs = &spine_since;
+	kernel_datapath->after_usecs = &spine_after;
+	kernel_datapath->log = &spine_log;
+	kernel_datapath->fto_us = 1000;
 	kernel_datapath->max_connections = MAX_ACTIVE_FLOWS;
 	kernel_datapath->spine_active_connections =
 		(struct spine_connection *)kzalloc(
@@ -662,9 +669,9 @@ static void __exit cubictcp_unregister(void)
 {
 	free_spine_nl_sk();
 	kfree(kernel_datapath->ccp_active_connections);
-    kfree(kernel_datapath);
-    pr_info("spine exit\n");
-    tcp_unregister_congestion_control(&cubictcp);
+	kfree(kernel_datapath);
+	pr_info("spine exit\n");
+	tcp_unregister_congestion_control(&cubictcp);
 }
 
 module_init(cubictcp_register);

@@ -11,7 +11,6 @@
 #define MAX_ACTIVE_FLOWS 1024
 #define MAX_DATAPATH_PROGRAMS 10
 
-
 struct skb_info {
 	u64 first_tx_mstamp; // choose the correct skb so the timestamp for first packet
 	u32 interval_us; // interval us as calculated from this SKB
@@ -28,14 +27,17 @@ struct spine {
 #define MTU 1500
 #define S_TO_US 1000000
 
-static inline void get_sock_from_spine(
-    struct sock **sk,
-    struct ccp_connection *conn
-) {
-    *sk = (struct sock*) spine_get_impl(conn);
+static inline void get_sock_from_spine(struct sock **sk,
+				       struct ccp_connection *conn)
+{
+	*sk = (struct sock *)spine_get_impl(conn);
 }
 
 void spine_set_pacing_rate(struct sock *sk, uint32_t rate);
 void spine_log(struct spine_datapath *dp, enum spine_log_level level,
 	       const char *msg, int msg_size);
+static u64 spine_now(void);
+static u64 spine_since(void);
+static u64 spine_after(void);
+
 #endif

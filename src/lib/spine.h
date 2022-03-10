@@ -14,7 +14,6 @@ typedef uint16_t u16;
 typedef uint32_t u32;
 typedef uint64_t u64;
 
-
 typedef enum {
 	SPINE_CUBIC = 0,
 	SPINE_VEGAS,
@@ -123,35 +122,49 @@ struct spine_datapath {
 		    const char *msg, int msg_size);
 
 	// time management
-	// u64 time_zero;
-	// u64 (*now)(void); // the current time in datapath time units
-	// u64 (*since_usecs)(u64 then); // elapsed microseconds since <then>
-	// u64 (*after_usecs)(
-	// 	u64 usecs); // <usecs> microseconds from now in datapath time units
+	u64 time_zero;
+	u64 (*now)(void); // the current time in datapath time units
+	u64 (*since_usecs)(u64 then); // elapsed microseconds since <then>
+	u64 (*after_usecs)(
+		u64 usecs); // <usecs> microseconds from now in datapath time units
 	size_t max_connections;
 	// list of active connections this datapath is handling
 	struct spine_connection *spine_active_connections;
-	// u64 fto_us;
-	// u64 last_msg_sent;
+	u64 fto_us;
+	u64 last_msg_sent;
 
 	// datapath-specific global state, such as: for sock* sk
 	void *impl;
 };
 
-void *spine_get_impl(struct ccp_connection *conn);
-
-void spine_set_impl(struct ccp_connection *conn, void *ptr);
-
-int spine_read_msg(struct spine_datapath *datapath, char *buf, int bufsize);
-
 int spine_init(struct spine_datapath *datapath, u32 id);
+
+void spine_free(struct spine_datapath *datapath);
 
 struct spine_connection *
 spine_connection_start(struct spine_datapath *datapath, void *impl,
 		       struct spine_datapath_info *flow_info);
 
+struct spine_connection *spine_connection_lookup(struct spine_datapath *datapath, u16 sid);
+
 void spine_connection_free(struct spine_datapath *datapath, u16 sid);
 
+
+// real underlying datapath implementation: linux kernel socket or quic or ...
+void *spine_get_impl(struct ccp_connection *conn);
+
+void spine_set_impl(struct ccp_connection *conn, void *ptr);
+
+
+// communication 
+int spine_read_msg(struct spine_datapath *datapath, char *buf, int bufsize);
+
+// the ultimate function called in congestion control logic
 int spine_invoke(struct spine_connection *conn);
+
+// timing 
+void _update_fto_timer(struct spine_datapath *datapath);
+bool _check_fto(struct spine_datapath *datapath);
+void _turn_off_fto_timer(struct spine_datapath *datapath);
 
 #endif
