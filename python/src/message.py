@@ -4,7 +4,7 @@ import struct
 
 from logger import logger as log
 
-
+# message types
 CREATE = 0
 MEASURE = 1
 INSTALL_EXPR = 2
@@ -19,6 +19,10 @@ NEURAL_NETWORK = 8
 
 # type of registers
 VOLATILE_CONTROL_REG = 8
+
+# registers for Cubic Parameters
+CUBIC_BETA_REG = 0
+CUBIC_BIC_SCALE_REG = 1
 
 
 class SpineMsgHeader(object):
@@ -42,6 +46,11 @@ class SpineMsgHeader(object):
             log.error("incorrect socket id")
             return False
         return True
+    
+    def create(self, type, len, sock):
+        self.type = type
+        self.len = len
+        self.sock = sock
 
     def serialize(self):
         return struct.pack(self.raw_format, self.type, self.len, self.sockId)
@@ -100,7 +109,7 @@ class UpdateField(object):
 
 class UpdateMsg(object):
     def __init__(self):
-        self.num_fields = 1
+        self.num_fields = 0
         self.fields = []
 
     def add_field(self, field):
