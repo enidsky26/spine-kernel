@@ -11,7 +11,6 @@ INSTALL_EXPR = 2
 UPDATE_FIELDS = 3
 CHANGE_PROG = 4
 READY = 5
-
 # spine message types
 STATE = 6
 PARAM = 7
@@ -23,6 +22,10 @@ VOLATILE_CONTROL_REG = 8
 # registers for Cubic Parameters
 CUBIC_BETA_REG = 0
 CUBIC_BIC_SCALE_REG = 1
+
+# some length of message
+SPINE_HEADER_LEN = 8
+SPINE_CREATE_LEN = 88
 
 
 class SpineMsgHeader(object):
@@ -105,6 +108,13 @@ class UpdateField(object):
         return struct.pack(
             self.raw_format, self.reg_type, self.reg_index, self.new_vale
         )
+    
+    def deserialize(self, buf):
+        if len(buf) < self.field_len:
+            log.error("message length too small")
+        self.reg_type, self.reg_index, self.new_value = struct.unpack(
+            self.raw_format, buf[: self.field_len]
+        )
 
 
 class UpdateMsg(object):
@@ -121,3 +131,23 @@ class UpdateMsg(object):
         for field in self.fields:
             buf += field.serialize()
         return buf
+
+    def deserialize(self, buf):
+        self.num_fields = struct.unpack("=I", buf[0:4])
+        for i in range(self.num_fields):
+            field = UpdateField()
+            field.deserialize(buf[4 + i * field.field_len :])
+            self.fields.append(field)
+
+
+def ReadyMsg(object):
+    def __init__(self):
+        self.msg_len = 4
+        # u32 
+        self.ready = 0
+    
+    def serialize(self):
+        return struct.pack("=I", self.ready)
+    
+    def deserialize(self, buf):
+        self.ready = struct.unpack("=I", buf[0:4])

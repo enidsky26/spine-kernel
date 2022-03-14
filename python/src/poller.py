@@ -182,7 +182,7 @@ class Poller(object):
                         # logger.debug(
                         #     "Poller: begin to run callback on fd {}".format(fd)
                         # )
-                        status = action.callback(action.sock)
+                        status = action.callback()
                         if status == ReturnStatus.Continue:
                             # all is normal, do nothing
                             continue

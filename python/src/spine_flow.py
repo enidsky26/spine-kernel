@@ -3,12 +3,17 @@ import sys
 
 from message import *
 
+# key is sock id 
 active_flowmap = dict()
-
+# key is flow id, value is sock id
+flow_id_map = dict()
+# key is hash(send_port), value is flow id
+send_port_map = dict()
 
 class Flow(object):
     def __init__(self):
-        self.sk_id = -1
+        self.sock_id = -1
+        # flow info
         self.init_cwnd = 0
         self.mss = 0
         self.src_ip = 0
@@ -18,7 +23,7 @@ class Flow(object):
         # max 64 bytes
         self.congAlg = ""
 
-    def from_cr(self, msg: CreateMsg, hdr: SpineMsgHeader):
+    def from_create_msg(self, msg: CreateMsg, hdr: SpineMsgHeader):
         self.init_cwnd = msg.init_cwnd
         self.mss = msg.mss
         self.src_ip = msg.src_ip
@@ -29,4 +34,4 @@ class Flow(object):
         self.congAlg = msg.congAlg
 
         # key in flow map
-        self.sk_id = hdr.sockId
+        self.sock_id = hdr.sockId
