@@ -20,17 +20,12 @@ endif
 EXTRA_CFLAGS += $(DEBFLAGS)
 EXTRA_CFLAGS += -std=gnu99 -Wno-declaration-after-statement -fgnu89-inline -D__KERNEL__
 
-TARGET = tcp_scubic
-$(TARGET)-objs := lib/serialize.o lib/spine_priv.o lib/spine.o tcp_spine.o  spine_nl.o tcp_scubic.o
+TARGET = scubic
+$(TARGET)-objs := lib/serialize.o lib/spine_priv.o lib/spine.o tcp_spine.o tcp_scubic.o spine_nl.o
 
 obj-m := $(TARGET).o
 
 all:
-# ifneq ($(shell expr $(KERNEL_VERSION_MAJOR) \>= 4),1)
-# 	$(error "Only kernel version >= 4 is supported: $(KERNEL_VERSION_MAJOR) $(KERNEL_VERSION_MINOR)")
-# endif 
-# ifeq ($(shell expr $(KERNEL_VERSION_MINOR) \>= 4),1)
-# endif
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(CURDIR) modules
 
 clean:

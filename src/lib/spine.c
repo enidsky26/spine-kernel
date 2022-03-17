@@ -23,7 +23,7 @@ int spine_init(struct spine_datapath *datapath, u32 id)
 	    datapath->now == NULL || datapath->since_usecs == NULL ||
 	    datapath->after_usecs == NULL ||
 	    datapath->spine_active_connections == NULL ||
-	    datapath->max_connections == 0 || datapath->fto_us == 0) {
+	    datapath->max_connections == 0 || datapath->fto_us == 0 || datapath->send_msg == NULL) {
 		return SPINE_MISSING_ARG;
 	}
 	// send ready message
@@ -87,6 +87,14 @@ spine_connection_start(struct spine_datapath *datapath, void *impl,
 
 	conn->impl = impl;
 	memcpy(&conn->flow_info, flow_info, sizeof(struct spine_datapath_info));
+
+	// init connection private state
+	ret = init_spine_priv_state(datapath, conn);
+
+	if (ret < 0) {
+		spine_error("could not init connection private state");
+		return NULL;
+	}
 
 	// send to CCP:
 	// index of pointer back to this sock for IPC callback
@@ -167,12 +175,18 @@ int spine_invoke(struct spine_connection *conn)
 	struct spine_datapath *datapath;
 	u8 num_params = 0;
 	u64 params[MAX_CONTROL_REG];
-
+	
+	spine_trace("Entering %s\n", __FUNCTION__);
 	if (conn == NULL) {
 		return SPINE_NULL_ARG;
 	}
 	datapath = conn->datapath;
 	state = get_spine_priv_state(conn);
+
+	if (!state) {
+		spine_error("no private state for connection");
+		return SPINE_NULL_ARG;
+	}
 
 	// check init status
 	if (!(state->sent_create)) {
@@ -212,7 +226,6 @@ int spine_invoke(struct spine_connection *conn)
 int send_conn_create(struct spine_datapath *datapath,
 		     struct spine_connection *conn)
 {
-	// TODO: send user message to indicate spine connection created
 	int ret;
 	char msg[CREATE_MSG_SIZE];
 	int msg_size;

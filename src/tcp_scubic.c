@@ -138,12 +138,19 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 	tp = tcp_sk(sk);
 	ca = inet_csk_ca(sk);
 
+	if (conn == NULL || params == NULL) {
+		pr_info("%s:conn/params is NULL\n", __FUNCTION__);
+		return;
+	}
+
 	if (conn->flow_info.alg == SPINE_CUBIC) {
 		// TODO impl the specific functions to modify cubic parameters
 		if (num_fields != SCUBIC_PARAM_NUM) {
 			pr_info("Incorrect number of parameters");
 			return;
 		} else {
+			pr_info("Change bic_scale from %d to %d, beta from %d to %d\n",
+				ca->bic_scale, params[0], ca->beta, params[1]);
 			ca->bic_scale = *(params);
 			ca->beta = *(params + 1);
 		}
@@ -473,7 +480,7 @@ static void bictcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		// corressponding params inside ca would be updated
 		ok = spine_invoke(conn);
 		if (ok < 0) {
-			pr_info("fail to cal spine_invoke: %d\n", ok);
+			pr_info("fail to call spine_invoke: %d\n", ok);
 		} else {
 			bictcp_update_params(ca);
 		}
@@ -646,6 +653,7 @@ static int __init cubictcp_register(void)
 	}
 	kernel_datapath->log = &spine_log;
 	kernel_datapath->set_params = &spine_set_params;
+	kernel_datapath->send_msg = &nl_sendmsg;
 
 	/* Here we need to add a IPC for receiving messages from user space 
 	 * RL controller.
@@ -655,6 +663,7 @@ static int __init cubictcp_register(void)
 		pr_info("cannot init spine ipc\n");
 		return -3;
 	}
+	pr_info("spine ipc init\n");
 	// register current sock in spine datapath
 	ret = spine_init(kernel_datapath, 0);
 	if (ret < 0) {
@@ -680,6 +689,6 @@ module_init(cubictcp_register);
 module_exit(cubictcp_unregister);
 
 MODULE_AUTHOR("Sangtae Ha, Stephen Hemminger, Xudong Liao");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("Dual BSD/GPL");
 MODULE_DESCRIPTION("Hi-RL CUBIC TCP");
-MODULE_VERSION("2.3");
+// MODULE_VERSION("2.3");

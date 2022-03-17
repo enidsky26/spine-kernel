@@ -4,5 +4,8 @@
         "genetlink.h": "c",
         "netlink.h": "c",
         "spine.h": "c"
-    }
+    },
+    "python.analysis.extraPaths": [
+        "./python/src"
+    ]
 }

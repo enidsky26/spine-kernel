@@ -1,0 +1,9 @@
+*.mod*
+*.cmd
+*.o
+__pycache__
+*.pyc
+
+*.ko
+Module*
+module*

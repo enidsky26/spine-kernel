@@ -85,6 +85,8 @@ struct spine_priv_state {
 	struct staged_update pending_update;
 };
 
+int init_spine_priv_state(struct spine_datapath *datapath, struct spine_connection *conn);
+
 __INLINE__ struct spine_priv_state *
 get_spine_priv_state(struct spine_connection *conn);
 
@@ -103,5 +105,9 @@ void free_spine_priv_state(struct spine_connection *conn);
 #define NONVOLATILE_REPORT_REG 6
 #define TMP_REG 7
 #define VOLATILE_CONTROL_REG 8
+
+// registers for Cubic Parameters
+#define CUBIC_BETA_REG 0
+#define CUBIC_BIC_SCALE_REG 1
 
 #endif
