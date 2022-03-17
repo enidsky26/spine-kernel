@@ -106,6 +106,8 @@ spine_connection_start(struct spine_datapath *datapath, void *impl,
 		}
 		return conn;
 	}
+	struct spine_priv_state *state = get_spine_priv_state(conn);
+    spine_conn_create_success(state);
 	return conn;
 }
 
@@ -215,7 +217,7 @@ int spine_invoke(struct spine_connection *conn)
 		}
 	}
 	// enforce parameters to datapath
-	if (datapath->set_params) {
+	if (num_params > 0 && datapath->set_params) {
 		datapath->set_params(conn, params, num_params);
 	}
 	// clear staged status
@@ -344,6 +346,8 @@ int spine_read_msg(struct spine_datapath *datapath, char *buf, int bufsize)
 	msg_ptr = buf + ret;
 
 	_turn_off_fto_timer(datapath);
+
+	spine_info("recv message to control flow: %d\n", hdr.SocketId);
 
 	// rest of the messages must be for a specific flow
 	conn = spine_connection_lookup(datapath, hdr.SocketId);

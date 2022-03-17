@@ -31,10 +31,13 @@ SPINE_CREATE_LEN = 88
 class SpineMsgHeader(object):
     def __init__(self):
         self.hdr_len = 2 + 2 + 4
-        self.raw_format = "=HHI"
+        # u16
         self.type = -1
+        # u16
         self.len = -1
-        self.sockId = -1
+        # u32
+        self.sock_id = -1
+        self.raw_format = "=HHI"
 
     def from_raw(self, buf):
         if not isinstance(buf, bytes):
@@ -43,20 +46,16 @@ class SpineMsgHeader(object):
         if len(buf) < self.hdr_len:
             log.error("header length too small")
             return False
-        self.type, self.len, self.sockId = struct.unpack(self.raw_format, buf[0:8])
-        # do some sanity check
-        if not (self.sockId > 0):
-            log.error("incorrect socket id")
-            return False
+        self.type, self.len, self.sock_id = struct.unpack(self.raw_format, buf[0:8])
         return True
     
-    def create(self, type, len, sock):
+    def create(self, type, len, sock_id):
         self.type = type
         self.len = len
-        self.sock = sock
+        self.sock_id = sock_id
 
     def serialize(self):
-        return struct.pack(self.raw_format, self.type, self.len, self.sockId)
+        return struct.pack(self.raw_format, self.type, self.len, self.sock_id)
 
 
 class CreateMsg(object):
@@ -85,7 +84,7 @@ class CreateMsg(object):
             self.src_port,
             self.dst_ip,
             self.dst_port,
-        ) = struct.unpack(buf[: self.int_len])
+        ) = struct.unpack(self.int_raw_format, buf[0:self.int_len])
         # remaining part is char array
         self.congAlg = buf[self.int_len :].decode()
 
@@ -103,10 +102,11 @@ class UpdateField(object):
         self.reg_type = type
         self.reg_index = index
         self.new_value = value
+        return self
 
     def serialize(self):
         return struct.pack(
-            self.raw_format, self.reg_type, self.reg_index, self.new_vale
+            self.raw_format, self.reg_type, self.reg_index, self.new_value
         )
     
     def deserialize(self, buf):

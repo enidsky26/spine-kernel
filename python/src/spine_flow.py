@@ -34,4 +34,5 @@ class Flow(object):
         self.congAlg = msg.congAlg
 
         # key in flow map
-        self.sock_id = hdr.sockId
+        self.sock_id = hdr.sock_id
+        return self

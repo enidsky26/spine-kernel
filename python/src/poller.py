@@ -10,6 +10,7 @@ from enum import Enum
 import context
 from ipc_socket import IPCSocket
 from logger import logger as logger
+from netlink import Netlink
 
 
 class PollEvents(Enum):
@@ -31,7 +32,11 @@ class ReturnStatus(Enum):
 
 class Action(object):
     def __init__(self, sock, event: PollEvents, callback, err_callback=None):
-        if not (isinstance(sock, socket.socket) or isinstance(sock, IPCSocket)):
+        if not (
+            isinstance(sock, socket.socket)
+            or isinstance(sock, IPCSocket)
+            or isinstance(sock, Netlink)
+        ):
             raise TypeError(
                 "sock should be socket.socket or IPCSocket rather than {}".format(
                     type(sock)
@@ -146,7 +151,7 @@ class Poller(object):
                 continue
         # logger.debug("Poller: end Poll")
         if not events:
-            logger.warning("Poller: No event in polling")
+            # logger.warning("Poller: No event in polling")
             return False
 
         # logger.debug("Poller: have action {}".format(len(events)))

@@ -3,6 +3,9 @@ import os
 import sys
 import struct
 
+import context
+from logger import logger as log 
+
 SOL_NETLINK = 270
 NETLINK_ADD_MEMBERSHIP = 1
 
@@ -14,13 +17,16 @@ MAX_PAYLOAD_LEN = 1024
 class Netlink(object):
     def __init__(self, protocol=socket.NETLINK_USERSOCK, nl_group=0):
         self.sock = socket.socket(socket.AF_NETLINK, socket.SOCK_RAW, protocol)
-        assert (self.sock.fileno() > 0, "Invalid socket fileno")
+        assert self.sock.fileno() > 0, "Invalid socket fileno"
         # bind <port, group>
         # set port to 0 to let kernel assign port number (usually the pid of current process)
         # The default value for this field (group)is zero which means that no multicasts will be received
         self.sock.bind((0, nl_group))
         self.port = self.sock.getsockname()[0]
         self.nl_header_len = 16
+
+    def fileno(self):
+        return self.sock.fileno()
 
     def add_mc_group(self, group=NETLINK_GROUP):
         self.sock.setsockopt(SOL_NETLINK, NETLINK_ADD_MEMBERSHIP, group)
@@ -57,3 +63,9 @@ class Netlink(object):
 
     def next_msg(self):
         buf = self.recv_raw()
+        if len(buf) <= self.nl_header_len:
+            log.warn("netlink message is too short. May no real payload")
+            return None
+        return buf[self.nl_header_len:]
+        
+        

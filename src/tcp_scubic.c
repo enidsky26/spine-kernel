@@ -143,10 +143,14 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 		return;
 	}
 
+	if (num_fields == 0) {
+		return;
+	}
+
 	if (conn->flow_info.alg == SPINE_CUBIC) {
 		// TODO impl the specific functions to modify cubic parameters
 		if (num_fields != SCUBIC_PARAM_NUM) {
-			pr_info("Incorrect number of parameters");
+			pr_info("Incorrect number of parameters: %d\n", num_fields);
 			return;
 		} else {
 			pr_info("Change bic_scale from %d to %d, beta from %d to %d\n",

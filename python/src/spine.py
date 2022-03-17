@@ -13,7 +13,7 @@ from urllib3 import Retry
 from logger import logger as log
 from message import *
 from netlink import Netlink
-from python.src.ipc_socket import IPCSocket
+from ipc_socket import IPCSocket
 from spine_flow import Flow, active_flowmap, send_port_map, flow_id_map
 from poller import Action, Poller, ReturnStatus, PollEvents
 
@@ -113,7 +113,6 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--ipc", "-i", type=str, required=True, help="IPC communication between Env and Spine controller")
-    parser.add_argument("--")
     args = parser.parse_args()
     # build communication sockets
     unix_sock = build_unix_sock(args.ipc)
