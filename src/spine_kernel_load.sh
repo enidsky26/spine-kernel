@@ -5,7 +5,6 @@ mode="664"
 
 if [ "$EUID" -ne 0 ]; then 
     echo "error: must run as root"
-    usage
     exit 1
 fi
 

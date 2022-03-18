@@ -1,4 +1,5 @@
 import os
+from pickle import OBJ
 import sys
 import json
 import time
@@ -70,6 +71,11 @@ def read_netlink_message(nl_sock: Netlink):
             return ReturnStatus.Continue
     elif hdr.type == READY:
         log.info("Spine kernel is ready!")
+    elif hdr.type == MEASURE:
+        sock_id = hdr.sock_id
+        if sock_id in active_flowmap:
+            log.info("remove flow: {}".format(sock_id))
+            active_flowmap.pop(sock_id)
 
 
 def send_control_message(flow_id, cubic_beta, cubic_bic_scale):
