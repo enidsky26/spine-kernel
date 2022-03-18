@@ -171,7 +171,7 @@ void spine_connection_free(struct spine_datapath *datapath, u16 sid)
 
 int spine_invoke(struct spine_connection *conn)
 {
-	int ret;
+	int ret = 0;
 	int i;
 	struct spine_priv_state *state;
 	struct spine_datapath *datapath;
@@ -346,8 +346,6 @@ int spine_read_msg(struct spine_datapath *datapath, char *buf, int bufsize)
 	msg_ptr = buf + ret;
 
 	_turn_off_fto_timer(datapath);
-
-	spine_info("recv message to control flow: %d\n", hdr.SocketId);
 
 	// rest of the messages must be for a specific flow
 	conn = spine_connection_lookup(datapath, hdr.SocketId);

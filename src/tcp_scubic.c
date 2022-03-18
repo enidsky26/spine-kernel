@@ -128,6 +128,39 @@ struct bictcp {
 	struct spine_connection *conn;
 };
 
+/* This function should be called once we modify bic_scale and beta
+ * to update other scaled parameters
+ */
+static inline void bictcp_update_params(struct bictcp *ca)
+{
+	/* Precompute a bunch of the scaling factors that are used per-packet
+	 * based on SRTT of 100ms
+	 */
+	ca->beta_scale = 8 * (BICTCP_BETA_SCALE + ca->beta) / 3 /
+			 (BICTCP_BETA_SCALE - ca->beta);
+
+	ca->cube_rtt_scale = (ca->bic_scale * 10); /* 1024*c/rtt */
+
+	/* calculate the "K" for (wmax-cwnd) = c/rtt * K^3
+	 *  so K = cubic_root( (wmax-cwnd)*rtt/c )
+	 * the unit of K is bictcp_HZ=2^10, not HZ
+	 *
+	 *  c = bic_scale >> 10
+	 *  rtt = 100ms
+	 *
+	 * the following code has been designed and tested for
+	 * cwnd < 1 million packets
+	 * RTT < 100 seconds
+	 * HZ < 1,000,00  (corresponding to 10 nano-second)
+	 */
+
+	/* 1/c * 2^2*bictcp_HZ * srtt */
+	ca->cube_factor = 1ull << (10 + 3 * BICTCP_HZ); /* 2^40 */
+
+	/* divide by bic_scale and by constant Srtt (100ms) */
+	do_div(ca->cube_factor, ca->bic_scale * 10);
+}
+
 void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 {
 	struct sock *sk;
@@ -150,13 +183,14 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 	if (conn->flow_info.alg == SPINE_CUBIC) {
 		// TODO impl the specific functions to modify cubic parameters
 		if (num_fields != SCUBIC_PARAM_NUM) {
-			pr_info("Incorrect number of parameters: %d\n", num_fields);
 			return;
 		} else {
-			pr_info("Change bic_scale from %d to %d, beta from %d to %d\n",
-				ca->bic_scale, params[0], ca->beta, params[1]);
-			ca->bic_scale = *(params);
-			ca->beta = *(params + 1);
+			pr_info("Change flow %d bic_scale from %d to %d, beta from %d to %d\n",
+				conn->index, ca->bic_scale, (int)params[0],
+				ca->beta, params[1]);
+			ca->bic_scale = params[0];
+			ca->beta = params[1];
+			bictcp_update_params(ca);
 		}
 	} else {
 		pr_info("Unknown internal congestion control algorithm, do nothing");
@@ -207,39 +241,6 @@ static inline void bictcp_hystart_reset(struct sock *sk)
 	ca->end_seq = tp->snd_nxt;
 	ca->curr_rtt = 0;
 	ca->sample_cnt = 0;
-}
-
-/* This function should be called once we modify bic_scale and beta
- * to update other scaled parameters
- */
-static inline void bictcp_update_params(struct bictcp *ca)
-{
-	/* Precompute a bunch of the scaling factors that are used per-packet
-	 * based on SRTT of 100ms
-	 */
-	ca->beta_scale = 8 * (BICTCP_BETA_SCALE + ca->beta) / 3 /
-			 (BICTCP_BETA_SCALE - ca->beta);
-
-	ca->cube_rtt_scale = (ca->bic_scale * 10); /* 1024*c/rtt */
-
-	/* calculate the "K" for (wmax-cwnd) = c/rtt * K^3
-	 *  so K = cubic_root( (wmax-cwnd)*rtt/c )
-	 * the unit of K is bictcp_HZ=2^10, not HZ
-	 *
-	 *  c = bic_scale >> 10
-	 *  rtt = 100ms
-	 *
-	 * the following code has been designed and tested for
-	 * cwnd < 1 million packets
-	 * RTT < 100 seconds
-	 * HZ < 1,000,00  (corresponding to 10 nano-second)
-	 */
-
-	/* 1/c * 2^2*bictcp_HZ * srtt */
-	ca->cube_factor = 1ull << (10 + 3 * BICTCP_HZ); /* 2^40 */
-
-	/* divide by bic_scale and by constant Srtt (100ms) */
-	do_div(ca->cube_factor, ca->bic_scale * 10);
 }
 
 static void bictcp_init(struct sock *sk)
@@ -484,9 +485,7 @@ static void bictcp_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 		// corressponding params inside ca would be updated
 		ok = spine_invoke(conn);
 		if (ok < 0) {
-			pr_info("fail to call spine_invoke: %d\n", ok);
-		} else {
-			bictcp_update_params(ca);
+			pr_debug("fail to call spine_invoke: %d\n", ok);
 		}
 	}
 

@@ -20,8 +20,8 @@ NEURAL_NETWORK = 8
 VOLATILE_CONTROL_REG = 8
 
 # registers for Cubic Parameters
-CUBIC_BETA_REG = 0
-CUBIC_BIC_SCALE_REG = 1
+CUBIC_BIC_SCALE_REG = 0
+CUBIC_BETA_REG = 1
 
 # some length of message
 SPINE_HEADER_LEN = 8
