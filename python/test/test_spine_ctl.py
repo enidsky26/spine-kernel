@@ -44,7 +44,7 @@ def read_netlink_message(nl_sock: Netlink):
     if hdr_raw == None:
         return ReturnStatus.Cancel
     hdr = SpineMsgHeader()
-    if not hdr.from_raw(hdr_raw):
+    if hdr.from_raw(hdr_raw) == None:
         log.error("Failed to parse netlink header")
     log.info("recv netlink message: {}".format(hdr.type))
     if hdr.type == CREATE:

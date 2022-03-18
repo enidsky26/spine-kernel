@@ -42,12 +42,12 @@ class SpineMsgHeader(object):
     def from_raw(self, buf):
         if not isinstance(buf, bytes):
             log.error("expected bytes")
-            return False
+            return None
         if len(buf) < self.hdr_len:
             log.error("header length too small")
-            return False
+            return None
         self.type, self.len, self.sock_id = struct.unpack(self.raw_format, buf[0:8])
-        return True
+        return self
     
     def create(self, type, len, sock_id):
         self.type = type
@@ -87,6 +87,7 @@ class CreateMsg(object):
         ) = struct.unpack(self.int_raw_format, buf[0:self.int_len])
         # remaining part is char array
         self.congAlg = buf[self.int_len :].decode()
+        return self
 
 
 class UpdateField(object):
@@ -138,6 +139,7 @@ class UpdateMsg(object):
             field = UpdateField()
             field.deserialize(buf[4 + i * field.field_len :])
             self.fields.append(field)
+        return self
 
 
 def ReadyMsg(object):
