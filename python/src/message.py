@@ -1,3 +1,4 @@
+import ipaddress
 import os
 import sys
 import struct
@@ -27,6 +28,28 @@ CUBIC_BETA_REG = 1
 SPINE_HEADER_LEN = 8
 SPINE_CREATE_LEN = 88
 
+# read u32 from big endian
+# raw: AB CD EF GH -> Big endian: GH EF CD AB
+# mid little endian: EF GH AB CD 
+def u32_from_bytes(bytes):
+    # Full big endian: 
+    tmp = struct.unpack("<I", bytes)[0]
+
+    b1 = tmp & 0xff000000 # GH
+    b2 = tmp & 0x00ff0000 # EF
+    b3 = tmp & 0x0000ff00 # CD
+    b4 = tmp & 0x000000ff # AB 
+    return (b1 >> 8) + (b2 << 8) + (b3 >> 8) + (b4 << 8)
+
+def u16_from_bytes(bytes):
+    # Full big endian: 
+    tmp = struct.unpack("<H", bytes)[0]
+
+    b1 = tmp & 0xff000000 # GH
+    b2 = tmp & 0x00ff0000 # EF
+    return (b1 >> 8) + (b2 << 8)
+
+
 
 class SpineMsgHeader(object):
     def __init__(self):
@@ -37,7 +60,7 @@ class SpineMsgHeader(object):
         self.len = -1
         # u32
         self.sock_id = -1
-        self.raw_format = "=HHI"
+        self.raw_format = "<HHI"
 
     def from_raw(self, buf):
         if not isinstance(buf, bytes):
@@ -48,7 +71,7 @@ class SpineMsgHeader(object):
             return None
         self.type, self.len, self.sock_id = struct.unpack(self.raw_format, buf[0:8])
         return self
-    
+
     def create(self, type, len, sock_id):
         self.type = type
         self.len = len
@@ -61,7 +84,7 @@ class SpineMsgHeader(object):
 class CreateMsg(object):
     def __init__(self):
         self.msg_len = 4 * 6 + 64
-        self.int_raw_format = "=IIIIII"
+        self.int_raw_format = "<IIIIII"
         self.int_len = struct.calcsize(self.int_raw_format)
 
         self.init_cwnd = 0
@@ -77,14 +100,15 @@ class CreateMsg(object):
         # first process message
         if len(buf) < self.msg_len:
             log.error("message length too small")
-        (
-            self.init_cwnd,
-            self.mss,
-            self.src_ip,
-            self.src_port,
-            self.dst_ip,
-            self.dst_port,
-        ) = struct.unpack(self.int_raw_format, buf[0:self.int_len])
+        # print("init_cwnd buf in hex: {}".format(buf[12:16]))
+        self.init_cwnd = u32_from_bytes(buf[0:4])
+        self.mss = u32_from_bytes(buf[4:8])
+        # print("ip raw: {}".format(buf[8:12]))
+        self.src_ip = struct.unpack("!I", buf[8:12])[0]
+        # self.src_ip = struct.unpack("<I", buf[8:12])[0]
+        self.src_port = u32_from_bytes(buf[12:16])
+        self.dst_ip = struct.unpack("!I", buf[16:20])[0]
+        self.dst_port = u32_from_bytes(buf[20:24])
         # remaining part is char array
         self.congAlg = buf[self.int_len :].decode()
         return self
@@ -93,7 +117,7 @@ class CreateMsg(object):
 class UpdateField(object):
     def __init__(self):
         self.field_len = 1 + 4 + 8
-        self.raw_format = "=BIQ"
+        self.raw_format = "<BIQ"
 
         self.reg_type = -1
         self.reg_index = -1
@@ -109,7 +133,7 @@ class UpdateField(object):
         return struct.pack(
             self.raw_format, self.reg_type, self.reg_index, self.new_value
         )
-    
+
     def deserialize(self, buf):
         if len(buf) < self.field_len:
             log.error("message length too small")
@@ -128,13 +152,13 @@ class UpdateMsg(object):
         self.num_fields += 1
 
     def serialize(self):
-        buf = struct.pack("=I", self.num_fields)
+        buf = struct.pack("<I", self.num_fields)
         for field in self.fields:
             buf += field.serialize()
         return buf
 
     def deserialize(self, buf):
-        self.num_fields = struct.unpack("=I", buf[0:4])
+        self.num_fields = struct.unpack("<I", buf[0:4])
         for i in range(self.num_fields):
             field = UpdateField()
             field.deserialize(buf[4 + i * field.field_len :])
@@ -145,11 +169,11 @@ class UpdateMsg(object):
 def ReadyMsg(object):
     def __init__(self):
         self.msg_len = 4
-        # u32 
+        # u32
         self.ready = 0
-    
+
     def serialize(self):
-        return struct.pack("=I", self.ready)
-    
+        return struct.pack("<I", self.ready)
+
     def deserialize(self, buf):
-        self.ready = struct.unpack("=I", buf[0:4])
+        self.ready = struct.unpack("<I", buf[0:4])

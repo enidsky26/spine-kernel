@@ -271,7 +271,9 @@ static void bictcp_init(struct sock *sk)
 		.congAlg = "scubic",
 		.alg = SPINE_CUBIC,
 	};
-	pr_info("New spine flow");
+	pr_info("New spine flow %d", conn->index);
+	// pr_info("New spine flow, from: %u:%u to %u:%u", dp_info.src_ip,
+	// 	dp_info.src_port, dp_info.dst_ip, dp_info.dst_port);
 
 	ca->conn =
 		spine_connection_start(kernel_datapath, (void *)sk, &dp_info);

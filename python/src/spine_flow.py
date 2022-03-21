@@ -1,14 +1,9 @@
 import os
+from socket import socket
 import sys
 
 from message import *
 
-# key is sock id 
-active_flowmap = dict()
-# key is flow id, value is sock id
-flow_id_map = dict()
-# key is hash(send_port), value is flow id
-send_port_map = dict()
 
 class Flow(object):
     def __init__(self):
@@ -36,3 +31,74 @@ class Flow(object):
         # key in flow map
         self.sock_id = hdr.sock_id
         return self
+
+
+class ActiveFlowMap(object):
+    def __init__(self):
+        # key is sock id (assigned by spine-kernel)
+        self.flowmap = dict()
+        # key is flow id (assigned by Env), value is sock id
+        self.flow_id_map = dict()
+        # key is dst_port, value is flow id
+        self.dst_port_map = dict()
+
+    def try_associate(self, flow: Flow):
+        if flow.dst_port in self.dst_port_map:
+            # first look up flow id from send port
+            flow_id = self.dst_port_map[flow.dst_port]
+            if flow_id not in self.flowmap:
+                self.flow_id_map[flow_id] = flow.sock_id
+                log.info(
+                    "associate env flow id: {} with kernel sock id: {}".format(
+                        flow_id, flow.sock_id
+                    )
+                )
+        return None
+
+    def add_flow_with_sockId(self, flow: Flow):
+        if flow.sock_id not in self.flowmap:
+            self.flowmap[flow.sock_id] = flow
+            log.info(
+                "add kernel flow: {} with init_cwnd: {},src_ip: {}, src_port: {}, dst_ip: {}, dst_port: {}".format(
+                    flow.sock_id,
+                    flow.init_cwnd,
+                    ipaddress.IPv4Address(flow.src_ip),
+                    flow.src_port,
+                    ipaddress.IPv4Address(flow.dst_ip),
+                    flow.dst_port,
+                )
+            )
+            self.try_associate(flow)
+            return True
+        else:
+            log.warn("flow already exists: {}".format(flow.sock_id))
+            return False
+
+    def add_flow_with_dst_port(self, port, flow_id):
+        if not port in self.dst_port_map:
+            self.dst_port_map[port] = flow_id
+            log.info("register env flow: {} with dst_port: {}".format(flow_id, port))
+
+    def get_sockId_by_flowId(self, flow_id):
+        if flow_id in self.flow_id_map:
+            return self.flow_id_map[flow_id]
+        else:
+            return None
+
+    def remove_flow_by_sockId(self, sock_id):
+        if sock_id in self.flowmap:   
+            # they should exists in these two maps
+            port = self.flowmap[sock_id].dst_port
+            if port in self.dst_port_map:
+                self.dst_port_map.pop(port)
+            log.info("remove kernel flow: {}".format(sock_id))
+            self.flowmap.pop(sock_id)
+            return True
+        log.warn("unknown flow {}".format(sock_id))
+        return False
+
+    def remove_flow_by_flowId(self, flow_id):
+        if flow_id in self.flow_id_map:
+            self.flow_id_map.pop(flow_id)
+            return True
+        return False

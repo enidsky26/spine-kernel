@@ -19,6 +19,7 @@ def main():
     sender.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     # congestion control algorithm
     sender.setsockopt(socket.IPPROTO_TCP, socket.TCP_CONGESTION, "scubic".encode())
+    print("connection from {} to {}".format(sender.getsockname(), sender.getpeername()))
     try:
         while True:
             sender.send(data.encode())
