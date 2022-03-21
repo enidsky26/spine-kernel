@@ -95,9 +95,9 @@ def read_unix_message(unix_sock: IPCSocket):
         log.warn("unknown flow id: {}".format(flow_id))
         return ReturnStatus.Continue
     
-    if "cubic_beta" in data and "cubic_bic_scale" in data:
-        cubic_beta = int(data["cubic_data"])
-        cubic_bic_scale = int(data["cubic_bic_scale"])
+    if "cubic_beta" in data and "cubic_bic_scale" in data["action"]:
+        cubic_beta = int(data["action"]["cubic_data"])
+        cubic_bic_scale = int(data["action"]["cubic_bic_scale"])
     msg = UpdateMsg()
     msg.add_field(
         UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BETA_REG, cubic_beta)
