@@ -1,5 +1,6 @@
 from enum import Enum
 import os
+import stat
 import sys
 import json
 import time
@@ -15,6 +16,7 @@ from netlink import Netlink
 from ipc_socket import IPCSocket
 from spine_flow import Flow, ActiveFlowMap
 from poller import Action, Poller, ReturnStatus, PollEvents
+from helper import drop_privileges
 
 # communication between spine-user-space and kernel
 nl_sock = None
@@ -23,6 +25,7 @@ unix_sock = None
 # cont status of polling
 cont = threading.Event()
 active_flow_map = ActiveFlowMap()
+poller = Poller()
 
 class MessageType(Enum):
     INIT = 0  # env initialization
@@ -30,14 +33,19 @@ class MessageType(Enum):
     END = 2  # episode end
     ALIVE = 3  # alive status
     OBSERVE = 4  # observe the world
+    TERMINATE = 5  # terminate the env
 
 
 def build_unix_sock(unix_file):
+    if os.path.exists(unix_file):
+        log.info("{} already exists, remove it".format(unix_file))
+        os.remove(unix_file)
     sock = IPCSocket()
+    log.info("UNIX IPC file: {}".format(unix_file))
     sock.bind(unix_file)
     sock.set_noblocking()
     sock.listen()
-    log.info("Spine is listening for flows from env")
+    log.info("Spine is listening for flows from env: {}".format(unix_file))
     return sock
 
 
@@ -74,14 +82,18 @@ def read_unix_message(unix_sock: IPCSocket):
     raw = unix_sock.read(header=True)
     if raw == None:
         return ReturnStatus.Cancel
-    data = json.load(raw)
-    flow_id = data["flow_id"]
+    data = json.loads(raw)
+    flow_id = int(data["flow_id"])
     msg_type = data["type"]
     # associate spine-kernel sock id with flow_id
     if msg_type == MessageType.START.value:
-        port = data["dst_port"]
+        port = int(data["dst_port"])
         active_flow_map.add_flow_with_dst_port(port, flow_id)
         return ReturnStatus.Continue
+    elif msg_type == MessageType.TERMINATE.value:
+        log.info("Env nofity spine to terminate, remove all flows")
+        active_flow_map.remove_all_env_flows()
+        return ReturnStatus.Cancel
     elif msg_type == MessageType.END.value:
         active_flow_map.remove_flow_by_flowId(flow_id)
         return ReturnStatus.Continue
@@ -90,25 +102,29 @@ def read_unix_message(unix_sock: IPCSocket):
         log.error("Incorrect message type: {}".format(msg_type))
         return ReturnStatus.Cancel
     # lookup sock id by flow_id
-    sock_id = active_flow_map.lookup_flow_by_flowId(flow_id)
+    sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
     if sock_id == None:
         log.warn("unknown flow id: {}".format(flow_id))
         return ReturnStatus.Continue
     
-    if "cubic_beta" in data and "cubic_bic_scale" in data["action"]:
-        cubic_beta = int(data["action"]["cubic_data"])
+    # log.info("Action {}".format(data["action"]))
+    
+    if "cubic_beta" in data["action"] and "cubic_bic_scale" in data["action"]:
+        cubic_beta = int(data["action"]["cubic_beta"])
         cubic_bic_scale = int(data["action"]["cubic_bic_scale"])
-    msg = UpdateMsg()
-    msg.add_field(
-        UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BETA_REG, cubic_beta)
-    )
-    msg.add_field(
-        UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BIC_SCALE_REG, cubic_bic_scale)
-    )
-    update_msg = msg.serialize()
-    nl_hdr = SpineMsgHeader()
-    nl_hdr.create(CREATE, len(update_msg) + nl_hdr.hdr_len, sock_id)
-    nl_sock.send_msg(nl_hdr.serialize() + update_msg)
+        log.info("cubic_beta: {}, cubic_bic_scale: {}".format(cubic_beta, cubic_bic_scale))
+        msg = UpdateMsg()
+        msg.add_field(
+            UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BETA_REG, cubic_beta)
+        )
+        msg.add_field(
+            UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BIC_SCALE_REG, cubic_bic_scale)
+        )
+        update_msg = msg.serialize()
+        nl_hdr = SpineMsgHeader()
+        nl_hdr.create(UPDATE_FIELDS, len(update_msg) + nl_hdr.hdr_len, sock_id)
+        nl_sock.send_msg(nl_hdr.serialize() + update_msg)
+        log.info("send control to kernel flow: {}".format(sock_id))
     return ReturnStatus.Continue
 
 def accept_unix_conn(unix_sock: IPCSocket, poller: Poller):
@@ -137,7 +153,7 @@ def accept_unix_conn(unix_sock: IPCSocket, poller: Poller):
 
 
 
-def polling(poller: Poller):
+def polling():
     while not cont.is_set():
         if poller.poll_once() == False:
             # just sleep for a while (10ms)
@@ -145,9 +161,8 @@ def polling(poller: Poller):
 
 
 def main(args):
-    poller = Poller()
     # register accept for unix socket
-    listen_callback = partial(accept_unix_conn, unix_sock)
+    listen_callback = partial(accept_unix_conn, unix_sock, poller)
     poller.add_action(
         Action(
             unix_sock,
@@ -161,21 +176,25 @@ def main(args):
     poller.add_action(
         Action(nl_sock, PollEvents.READ_ERR_FLAGS, callback=netlink_read_wrapper)
     )
-    threading.Thread(target=polling, args=(poller)).run()
+    threading.Thread(target=polling).run()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
+    defalut_unix_file = "/tmp/spine_ipc"
     parser.add_argument(
         "--ipc",
         "-i",
         type=str,
-        required=True,
+        default=defalut_unix_file,
         help="IPC communication between Env and Spine controller",
     )
     args = parser.parse_args()
+    nl_sock = build_netlink_sock()
+    drop_privileges(uid_name="xudong", gid_name="xudong")
+    # after build netlink socket, we try to drop root privilege
     # build communication sockets
     unix_sock = build_unix_sock(args.ipc)
-    nl_sock = build_netlink_sock()
-
+    # mod: 775
+    os.chmod(args.ipc, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
     main(args)

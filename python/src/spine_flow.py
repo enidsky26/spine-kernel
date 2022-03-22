@@ -46,7 +46,7 @@ class ActiveFlowMap(object):
         if flow.dst_port in self.dst_port_map:
             # first look up flow id from send port
             flow_id = self.dst_port_map[flow.dst_port]
-            if flow_id not in self.flowmap:
+            if flow_id not in self.flow_id_map:
                 self.flow_id_map[flow_id] = flow.sock_id
                 log.info(
                     "associate env flow id: {} with kernel sock id: {}".format(
@@ -102,3 +102,7 @@ class ActiveFlowMap(object):
             self.flow_id_map.pop(flow_id)
             return True
         return False
+        
+    def remove_all_env_flows(self):
+        for flow_id in self.flow_id_map.copy():
+            self.flow_id_map.pop(flow_id)

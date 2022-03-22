@@ -60,7 +60,7 @@ class SpineMsgHeader(object):
         self.len = -1
         # u32
         self.sock_id = -1
-        self.raw_format = "<HHI"
+        self.raw_format = "=HHI"
 
     def from_raw(self, buf):
         if not isinstance(buf, bytes):
@@ -106,9 +106,9 @@ class CreateMsg(object):
         # print("ip raw: {}".format(buf[8:12]))
         self.src_ip = struct.unpack("!I", buf[8:12])[0]
         # self.src_ip = struct.unpack("<I", buf[8:12])[0]
-        self.src_port = u32_from_bytes(buf[12:16])
+        self.src_port = int(u32_from_bytes(buf[12:16]))
         self.dst_ip = struct.unpack("!I", buf[16:20])[0]
-        self.dst_port = u32_from_bytes(buf[20:24])
+        self.dst_port = int(u32_from_bytes(buf[20:24]))
         # remaining part is char array
         self.congAlg = buf[self.int_len :].decode()
         return self
