@@ -14,7 +14,7 @@ from logger import logger as log
 from message import *
 from netlink import Netlink
 from ipc_socket import IPCSocket
-from spine_flow import Flow, ActiveFlowMap
+from spine_flow import Flow, ActiveFlowMap, EnvFlows
 from poller import Action, Poller, ReturnStatus, PollEvents
 from helper import drop_privileges
 
@@ -24,8 +24,10 @@ nl_sock = None
 unix_sock = None
 # cont status of polling
 cont = threading.Event()
-active_flow_map = ActiveFlowMap()
+env_flows = EnvFlows()
 poller = Poller()
+dst_port_of_env = dict()
+
 
 class MessageType(Enum):
     INIT = 0  # env initialization
@@ -45,7 +47,7 @@ def build_unix_sock(unix_file):
     sock.bind(unix_file)
     sock.set_noblocking()
     sock.listen()
-    log.info("Spine is listening for flows from env: {}".format(unix_file))
+    log.info("Spine is listening for flows from env at {}".format(unix_file))
     return sock
 
 
@@ -67,7 +69,13 @@ def read_netlink_message(nl_sock: Netlink):
         msg = CreateMsg()
         msg.from_raw(hdr_raw[hdr.hdr_len :])
         flow = Flow().from_create_msg(msg, hdr)
+        # first find env
+        env_id = dst_port_of_env.get(flow.dst_port, None)
+        if env_id == None:
+            log.warn("unknown dst_port: {}".format(flow.dst_port))
+            return ReturnStatus.Continue
         # register new flow
+        active_flow_map = env_flows.get_env_flows(env_id)
         active_flow_map.add_flow_with_sockId(flow)
         return ReturnStatus.Continue
     elif hdr.type == READY:
@@ -83,16 +91,26 @@ def read_unix_message(unix_sock: IPCSocket):
     if raw == None:
         return ReturnStatus.Cancel
     data = json.loads(raw)
+    env_id = str(data["env_id"])
     flow_id = int(data["flow_id"])
     msg_type = data["type"]
     # associate spine-kernel sock id with flow_id
+    active_flow_map = env_flows.get_env_flows(env_id)
+    if active_flow_map == None:
+        log.warn("env {} has not registered.".format(env_id))
+        return ReturnStatus.Continue
+
     if msg_type == MessageType.START.value:
         port = int(data["dst_port"])
+        # we also need to record the corresponce of env_id and dst_port
+        dst_port_of_env[port] = env_id
         active_flow_map.add_flow_with_dst_port(port, flow_id)
         return ReturnStatus.Continue
     elif msg_type == MessageType.TERMINATE.value:
-        log.info("Env nofity spine to terminate, remove all flows")
+        log.info("env {} notifies spine to terminate, remove all flows".format(env_id))
         active_flow_map.remove_all_env_flows()
+        # deregister env
+        env_flows.release_env(env_id)
         return ReturnStatus.Cancel
     elif msg_type == MessageType.END.value:
         active_flow_map.remove_flow_by_flowId(flow_id)
@@ -106,26 +124,31 @@ def read_unix_message(unix_sock: IPCSocket):
     if sock_id == None:
         log.warn("unknown flow id: {}".format(flow_id))
         return ReturnStatus.Continue
-    
+
     # log.info("Action {}".format(data["action"]))
-    
+
     if "cubic_beta" in data["action"] and "cubic_bic_scale" in data["action"]:
         cubic_beta = int(data["action"]["cubic_beta"])
         cubic_bic_scale = int(data["action"]["cubic_bic_scale"])
-        log.info("cubic_beta: {}, cubic_bic_scale: {}".format(cubic_beta, cubic_bic_scale))
+        # log.info(
+        #     "cubic_beta: {}, cubic_bic_scale: {}".format(cubic_beta, cubic_bic_scale)
+        # )
         msg = UpdateMsg()
         msg.add_field(
             UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BETA_REG, cubic_beta)
         )
         msg.add_field(
-            UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BIC_SCALE_REG, cubic_bic_scale)
+            UpdateField().create(
+                VOLATILE_CONTROL_REG, CUBIC_BIC_SCALE_REG, cubic_bic_scale
+            )
         )
         update_msg = msg.serialize()
         nl_hdr = SpineMsgHeader()
         nl_hdr.create(UPDATE_FIELDS, len(update_msg) + nl_hdr.hdr_len, sock_id)
         nl_sock.send_msg(nl_hdr.serialize() + update_msg)
-        log.info("send control to kernel flow: {}".format(sock_id))
+        # log.info("send control to kernel flow: {}".format(sock_id))
     return ReturnStatus.Continue
+
 
 def accept_unix_conn(unix_sock: IPCSocket, poller: Poller):
     client: IPCSocket = unix_sock.accept()
@@ -137,12 +160,14 @@ def accept_unix_conn(unix_sock: IPCSocket, poller: Poller):
         log.error("Incorrect message type: {}, ignore this".format(info))
         return ReturnStatus.Continue
     # accept new conn and register to poller
-    flow_id = int(message["flow_id"])
+    env_id = str(message["env_id"])
     log.info(
-        "Spine get connection from Env, flow_id is {}, new ipc fd: {}".format(
-            flow_id, client.fileno()
+        "Spine get connection from Env, env_id is {}, new ipc fd: {}".format(
+            env_id, client.fileno()
         )
     )
+    # register to env
+    env_flows.register_env(env_id)
     client.set_noblocking()
     # unix_sock: recv updated parameters and relay to nl_sock
     unix_read_wrapper = partial(read_unix_message, client)
@@ -150,7 +175,6 @@ def accept_unix_conn(unix_sock: IPCSocket, poller: Poller):
         Action(client, PollEvents.READ_ERR_FLAGS, callback=unix_read_wrapper)
     )
     return ReturnStatus.Continue
-
 
 
 def polling():
@@ -181,12 +205,12 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    defalut_unix_file = "/tmp/spine_ipc"
+    default_unix_file = "/tmp/spine_ipc"
     parser.add_argument(
         "--ipc",
         "-i",
         type=str,
-        default=defalut_unix_file,
+        default=default_unix_file,
         help="IPC communication between Env and Spine controller",
     )
     args = parser.parse_args()

@@ -106,3 +106,28 @@ class ActiveFlowMap(object):
     def remove_all_env_flows(self):
         for flow_id in self.flow_id_map.copy():
             self.flow_id_map.pop(flow_id)
+
+
+class EnvFlows(object):
+    def __init__(self):
+        self.env_id = None
+        # hash of env id
+        self.h_id = None
+        self.flows_per_env = dict()
+
+    def register_env(self, env_id):
+        self.env_id = env_id 
+        self.h_id = hash(self.env_id)
+        self.flows_per_env[self.h_id] = ActiveFlowMap()
+
+    def get_env_flows(self, env_id) -> ActiveFlowMap:
+        id = hash(env_id)
+        if id in self.flows_per_env:
+            return self.flows_per_env[id]
+        else:
+            return None
+
+    def release_env(self, env_id):
+        id = hash(env_id)
+        if id in self.flows_per_env:
+            self.flows_per_env.pop(id)
