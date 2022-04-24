@@ -210,14 +210,23 @@ if __name__ == "__main__":
         "--ipc",
         "-i",
         type=str,
-        default=default_unix_file,
+        default=None,
         help="IPC communication between Env and Spine controller",
+    )
+    parser.add_argument(
+        "--user",
+        "-u",
+        type=str,
+        default="xudong",
+        help="the effective user after drop root privileges, we assume the same gid_name as uid_name",
     )
     args = parser.parse_args()
     nl_sock = build_netlink_sock()
-    drop_privileges(uid_name="xudong", gid_name="xudong")
+    drop_privileges(uid_name=args.user, gid_name=args.user)
     # after build netlink socket, we try to drop root privilege
     # build communication sockets
+    if args.ipc is None:
+        args.ipc = "{}_{}".format(default_unix_file, args.user)
     unix_sock = build_unix_sock(args.ipc)
     # mod: 775
     os.chmod(args.ipc, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
