@@ -27,6 +27,8 @@ cont = threading.Event()
 env_flows = EnvFlows()
 poller = Poller()
 dst_port_of_env = dict()
+# map kernel spine socket id to env_id
+sockid_env = dict()
 
 
 class MessageType(Enum):
@@ -76,13 +78,23 @@ def read_netlink_message(nl_sock: Netlink):
             return ReturnStatus.Continue
         # register new flow
         active_flow_map = env_flows.get_env_flows(env_id)
+        if active_flow_map == None:
+            log.warn("env: {} has not registered".format(env_id))
+            return ReturnStatus.Continue
         active_flow_map.add_flow_with_sockId(flow)
+        # cache sockID with envid
+        sockid_env[hdr.sock_id] = env_id
         return ReturnStatus.Continue
     elif hdr.type == READY:
         log.info("Spine kernel is ready!!")
     elif hdr.type == MEASURE:
         sock_id = hdr.sock_id
-        active_flow_map.remove_flow_by_sockId(sock_id)
+        # find env
+        env_id = sockid_env.get(sock_id, None)
+        active_flow_map = env_flows.get_env_flows(env_id)
+        if active_flow_map != None:
+            active_flow_map.remove_flow_by_sockId(sock_id)
+        # env has been deregistered, do nothing
     return ReturnStatus.Continue
 
 

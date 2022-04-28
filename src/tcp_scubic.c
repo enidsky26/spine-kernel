@@ -188,6 +188,11 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 			pr_info("Change flow %d bic_scale from %d to %d, beta from %d to %d\n",
 				conn->index, ca->bic_scale, (int)params[0],
 				ca->beta, params[1]);
+			if (unlikely(params[0] == 0) ||
+			    unlikely(params[1] == 0)) {
+				pr_info("warning: parameter equals zero, ignore this run\n");
+				return;
+			}
 			ca->bic_scale = params[0];
 			ca->beta = params[1];
 			bictcp_update_params(ca);
@@ -326,7 +331,7 @@ static u32 cubic_root(u64 a)
 	 *   cbrt(x) = (v[x] + 10) >> 6
 	 */
 	static const u8 v[] = {
-		/* 0x00 */ 0,	54,  54,  54,  118, 118, 118, 118,
+		/* 0x00 */ 0,   54,  54,  54,  118, 118, 118, 118,
 		/* 0x08 */ 123, 129, 134, 138, 143, 147, 151, 156,
 		/* 0x10 */ 157, 161, 164, 168, 170, 173, 176, 179,
 		/* 0x18 */ 181, 185, 187, 190, 192, 194, 197, 199,

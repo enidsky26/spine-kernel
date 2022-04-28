@@ -53,7 +53,6 @@ class ActiveFlowMap(object):
                         flow_id, flow.sock_id
                     )
                 )
-        return None
 
     def add_flow_with_sockId(self, flow: Flow):
         if flow.sock_id not in self.flowmap:
@@ -86,7 +85,7 @@ class ActiveFlowMap(object):
             return None
 
     def remove_flow_by_sockId(self, sock_id):
-        if sock_id in self.flowmap:   
+        if sock_id in self.flowmap:
             # they should exists in these two maps
             port = self.flowmap[sock_id].dst_port
             if port in self.dst_port_map:
@@ -94,15 +93,16 @@ class ActiveFlowMap(object):
             log.info("remove kernel flow: {}".format(sock_id))
             self.flowmap.pop(sock_id)
             return True
-        log.warn("unknown flow {}".format(sock_id))
+        log.warn("unknown kernel flow {}".format(sock_id))
         return False
 
     def remove_flow_by_flowId(self, flow_id):
         if flow_id in self.flow_id_map:
             self.flow_id_map.pop(flow_id)
             return True
+        # leave other stuff to callback of netlink release mesage
         return False
-        
+
     def remove_all_env_flows(self):
         for flow_id in self.flow_id_map.copy():
             self.flow_id_map.pop(flow_id)
@@ -116,11 +116,11 @@ class EnvFlows(object):
         self.flows_per_env = dict()
 
     def register_env(self, env_id):
-        self.env_id = env_id 
+        self.env_id = env_id
         self.h_id = hash(self.env_id)
         self.flows_per_env[self.h_id] = ActiveFlowMap()
 
-    def get_env_flows(self, env_id) -> ActiveFlowMap:
+    def get_env_flows(self, env_id):
         id = hash(env_id)
         if id in self.flows_per_env:
             return self.flows_per_env[id]
