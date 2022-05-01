@@ -139,6 +139,10 @@ def read_unix_message(unix_sock: IPCSocket):
 
     # log.info("Action {}".format(data["action"]))
 
+    # spine semantics: None means no action is need
+    if data["action"] is None:
+        return ReturnStatus.Continue
+
     if "cubic_beta" in data["action"] and "cubic_bic_scale" in data["action"]:
         cubic_beta = int(data["action"]["cubic_beta"])
         cubic_bic_scale = int(data["action"]["cubic_bic_scale"])
