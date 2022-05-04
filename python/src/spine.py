@@ -26,10 +26,6 @@ unix_sock = None
 cont = threading.Event()
 env_flows = EnvFlows()
 poller = Poller()
-dst_port_of_env = dict()
-# map kernel spine socket id to env_id
-sockid_env = dict()
-
 
 class MessageType(Enum):
     INIT = 0  # env initialization
@@ -42,10 +38,10 @@ class MessageType(Enum):
 
 def build_unix_sock(unix_file):
     if os.path.exists(unix_file):
-        log.info("{} already exists, remove it".format(unix_file))
+        log.debug("{} already exists, remove it".format(unix_file))
         os.remove(unix_file)
     sock = IPCSocket()
-    log.info("UNIX IPC file: {}".format(unix_file))
+    log.debug("UNIX IPC file: {}".format(unix_file))
     sock.bind(unix_file)
     sock.set_noblocking()
     sock.listen()
@@ -72,9 +68,9 @@ def read_netlink_message(nl_sock: Netlink):
         msg.from_raw(hdr_raw[hdr.hdr_len :])
         flow = Flow().from_create_msg(msg, hdr)
         # first find env
-        env_id = dst_port_of_env.get(flow.dst_port, None)
+        env_id = env_flows.dst_port_to_env_id.get(flow.dst_port, None)
         if env_id == None:
-            log.warn("unknown dst_port: {}".format(flow.dst_port))
+            # log.warn("unknown dst_port: {}".format(flow.dst_port))
             return ReturnStatus.Continue
         # register new flow
         active_flow_map = env_flows.get_env_flows(env_id)
@@ -83,17 +79,15 @@ def read_netlink_message(nl_sock: Netlink):
             return ReturnStatus.Continue
         active_flow_map.add_flow_with_sockId(flow)
         # cache sockID with envid
-        sockid_env[hdr.sock_id] = env_id
+        env_flows.bind_sock_id_to_env(flow.sock_id, env_id)
         return ReturnStatus.Continue
     elif hdr.type == READY:
         log.info("Spine kernel is ready!!")
     elif hdr.type == MEASURE:
+        # flow release
         sock_id = hdr.sock_id
-        # find env
-        env_id = sockid_env.get(sock_id, None)
-        active_flow_map = env_flows.get_env_flows(env_id)
-        if active_flow_map != None:
-            active_flow_map.remove_flow_by_sockId(sock_id)
+        # we just remove the cached items
+        env_flows.release_sock_id_to_env(sock_id)
         # env has been deregistered, do nothing
     return ReturnStatus.Continue
 
@@ -115,17 +109,20 @@ def read_unix_message(unix_sock: IPCSocket):
     if msg_type == MessageType.START.value:
         port = int(data["dst_port"])
         # we also need to record the corresponce of env_id and dst_port
-        dst_port_of_env[port] = env_id
+        env_flows.bind_port_to_env(port, env_id)
         active_flow_map.add_flow_with_dst_port(port, flow_id)
         return ReturnStatus.Continue
     elif msg_type == MessageType.TERMINATE.value:
-        log.info("env {} notifies spine to terminate, remove all flows".format(env_id))
         active_flow_map.remove_all_env_flows()
         # deregister env
         env_flows.release_env(env_id)
         return ReturnStatus.Cancel
     elif msg_type == MessageType.END.value:
-        active_flow_map.remove_flow_by_flowId(flow_id)
+        # we need the dsr_port id to remove the cache
+        sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
+        port = active_flow_map.remove_flow_by_flowId(flow_id)
+        # remove cached items
+        env_flows.release_port_to_env(port)
         return ReturnStatus.Continue
     # message should be ALIVE
     if msg_type != MessageType.ALIVE.value:
@@ -134,10 +131,8 @@ def read_unix_message(unix_sock: IPCSocket):
     # lookup sock id by flow_id
     sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
     if sock_id == None:
-        log.warn("unknown flow id: {}".format(flow_id))
+        # log.warn("unknown flow id: {}".format(flow_id))
         return ReturnStatus.Continue
-
-    # log.info("Action {}".format(data["action"]))
 
     # spine semantics: None means no action is need
     if data["action"] is None:
