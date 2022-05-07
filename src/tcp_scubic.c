@@ -185,9 +185,9 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 		if (num_fields != SCUBIC_PARAM_NUM) {
 			return;
 		} else {
-			pr_info("Change flow %d bic_scale from %d to %d, beta from %d to %d\n",
-				conn->index, ca->bic_scale, (int)params[0],
-				ca->beta, params[1]);
+			// pr_info("Change flow %d bic_scale from %d to %d, beta from %d to %d\n",
+			// 	conn->index, ca->bic_scale, (int)params[0],
+			// 	ca->beta, params[1]);
 			if (unlikely(params[0] == 0) ||
 			    unlikely(params[1] == 0)) {
 				pr_info("warning: parameter equals zero, ignore this run\n");
