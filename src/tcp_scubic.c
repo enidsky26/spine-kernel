@@ -189,8 +189,10 @@ void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 			// 	conn->index, ca->bic_scale, (int)params[0],
 			// 	ca->beta, params[1]);
 			if (unlikely(params[0] == 0) ||
-			    unlikely(params[1] == 0)) {
-				pr_info("warning: parameter equals zero, ignore this run\n");
+			    unlikely(params[1] == 0) ||
+			    unlikely(params[0] >= 1024) ||
+			    unlikely(params[1] >= 1024)) {
+				pr_info("warning: invalid parameters, ignore this run\n");
 				return;
 			}
 			ca->bic_scale = params[0];
