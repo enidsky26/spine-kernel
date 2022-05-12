@@ -228,7 +228,7 @@ if __name__ == "__main__":
         "--user",
         "-u",
         type=str,
-        default="xudong",
+        default="tianhan",
         help="the effective user after drop root privileges, we assume the same gid_name as uid_name",
     )
     args = parser.parse_args()
