@@ -139,7 +139,6 @@ static inline void bictcp_update_params(struct bictcp *ca)
 	ca->beta_scale = 8 * (BICTCP_BETA_SCALE + ca->beta) / 3 /
 			 (BICTCP_BETA_SCALE - ca->beta);
 
-	ca->cube_rtt_scale = (ca->bic_scale * 10); /* 1024*c/rtt */
 
 	/* calculate the "K" for (wmax-cwnd) = c/rtt * K^3
 	 *  so K = cubic_root( (wmax-cwnd)*rtt/c )
@@ -394,6 +393,8 @@ static inline void bictcp_update(struct bictcp *ca, u32 cwnd, u32 acked)
 		ca->ack_cnt = acked; /* start counting */
 		ca->tcp_cwnd = cwnd; /* syn with cubic */
 
+		ca->cube_rtt_scale = (ca->bic_scale * 10); /* 1024*c/rtt */
+		
 		if (ca->last_max_cwnd <= cwnd) {
 			ca->bic_K = 0;
 			ca->bic_origin_point = cwnd;
