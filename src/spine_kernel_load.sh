@@ -1,6 +1,6 @@
 #!/bin/bash
 
-module="scubic"
+module=${1:-"scubic"}
 mode="664"
 
 if [ "$EUID" -ne 0 ]; then 
@@ -19,4 +19,4 @@ fi
 
 
 ALLOWED=$(sudo cat /proc/sys/net/ipv4/tcp_allowed_congestion_control)
-echo "${ALLOWED} scubic" | sudo tee /proc/sys/net/ipv4/tcp_allowed_congestion_control
+echo "${ALLOWED} ${module}" | sudo tee /proc/sys/net/ipv4/tcp_allowed_congestion_control

@@ -18,6 +18,7 @@ typedef uint64_t u64;
 typedef enum {
 	SPINE_CUBIC = 0,
 	SPINE_VEGAS,
+	SPINE_VANILLA,
 } spine_internal_alg;
 
 enum spine_log_level {
@@ -148,24 +149,23 @@ struct spine_connection *
 spine_connection_start(struct spine_datapath *datapath, void *impl,
 		       struct spine_datapath_info *flow_info);
 
-struct spine_connection *spine_connection_lookup(struct spine_datapath *datapath, u16 sid);
+struct spine_connection *
+spine_connection_lookup(struct spine_datapath *datapath, u16 sid);
 
 void spine_connection_free(struct spine_datapath *datapath, u16 sid);
-
 
 // real underlying datapath implementation: linux kernel socket or quic or ...
 void *spine_get_impl(struct spine_connection *conn);
 
 void spine_set_impl(struct spine_connection *conn, void *ptr);
 
-
-// communication 
+// communication
 int spine_read_msg(struct spine_datapath *datapath, char *buf, int bufsize);
 
 // the ultimate function called in congestion control logic
 int spine_invoke(struct spine_connection *conn);
 
-// timing 
+// timing
 void _update_fto_timer(struct spine_datapath *datapath);
 bool _check_fto(struct spine_datapath *datapath);
 void _turn_off_fto_timer(struct spine_datapath *datapath);

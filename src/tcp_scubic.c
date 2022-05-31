@@ -160,7 +160,7 @@ static inline void bictcp_update_params(struct bictcp *ca)
 	do_div(ca->cube_factor, ca->bic_scale * 10);
 }
 
-void spine_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
+void scubic_set_params(struct spine_connection *conn, u64 *params, u8 num_fields)
 {
 	struct sock *sk;
 	struct tcp_sock *tp;
@@ -663,7 +663,7 @@ static int __init cubictcp_register(void)
 		return -2;
 	}
 	kernel_datapath->log = &spine_log;
-	kernel_datapath->set_params = &spine_set_params;
+	kernel_datapath->set_params = &scubic_set_params;
 	kernel_datapath->send_msg = &nl_sendmsg;
 
 	/* Here we need to add a IPC for receiving messages from user space 
