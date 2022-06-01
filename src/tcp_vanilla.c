@@ -20,7 +20,7 @@ extern struct timespec64 tzero;
 struct vanilla {
 	u32 min_rtt_us; /* minimum observed RTT */
 
-	u32 cnt; /* increase cwndum rtt of current round */
+	int cnt; /*  cwnd change */
 
 	/* control parameters, which would be modified by user-space RL algorithm 
      * these variables are all bounds in [0, 1024]
@@ -103,7 +103,6 @@ static void vanilla_init(struct sock *sk)
 	struct vanilla *ca = inet_csk_ca(sk);
 	vanilla_reset(ca);
 
-
 	/* create spine flow and register parameters */
 	struct spine_datapath_info dp_info = {
 		.init_cwnd = tp->snd_cwnd * tp->mss_cache,
@@ -172,23 +171,42 @@ static u32 vanilla_undo_cwnd(struct sock *sk)
 	return tcp_reno_undo_cwnd(sk);
 }
 
+static void vanilla_set_cwnd(struct sock *sk)
+{
+	// do_div(change, VANILLA_SCALE);
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct vanilla *ca = inet_csk_ca(sk);
+	u32 cwnd = tp->snd_cwnd;
+	int delta = ca->cnt;
+    do_div(delta, VANILLA_SCALE);
+
+	if (delta != 0) {
+		ca->cnt -= delta * 1024;
+		cwnd += delta;
+	}
+
+	/* apply global cap */
+	cwnd = max(cwnd, 10U);
+	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+}
+
 static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
 	struct spine_connection *conn = ca->conn;
-	u32 acked = rs->delivered;
+	// u32 acked = rs->delivered;
 	int ok = 0;
 
 	if (!tcp_is_cwnd_limited(sk))
 		return;
 
-	if (tcp_in_slow_start(tp)) {
-		acked = tcp_slow_start(tp, acked);
-		if (!acked)
-			return;
-		/* otherwise, we can send more ... */
-	}
+	// if (tcp_in_slow_start(tp)) {
+	// 	acked = tcp_slow_start(tp, acked);
+	// 	if (!acked)
+	// 		return;
+	// 	/* otherwise, we can send more ... */
+	// }
 
 	/* TODO: 
      * 1. TCP slow start
@@ -207,23 +225,24 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 		}
 	}
 	/* calculate how much current cwnd should change 
-     * change = alpha / 1024 - beta / 1024 * (rtt / min_rtt - 1 - gamma / 1024)
+     * change = alpha / 1024 - (beta / 1024) * (rtt / min_rtt - 1 - gamma / 1024)
      * target = change + tp->cwnd
      */
-	long change;
+	int change;
 	u64 lat_inflation;
-	u32 cwnd = tp->snd_cwnd;
 
 	lat_inflation = rs->rtt_us * VANILLA_SCALE;
 	do_div(lat_inflation, ca->min_rtt_us);
-	lat_inflation = lat_inflation - 1 - ca->gamma;
+	lat_inflation = lat_inflation - 1 * VANILLA_SCALE - ca->gamma;
+    do_div(lat_inflation, VANILLA_SCALE);
 	change = ca->alpha - ca->beta * lat_inflation;
-	do_div(change, VANILLA_SCALE);
-	cwnd += change;
+	// bound the change
+	change = min(change, 1024);
+	change = max(change, -512);
+	ca->cnt += change;
 
-	/* apply global cap */
-	cwnd = max(cwnd, 10U);
-	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+	// try to enforce cwnd changes
+	vanilla_set_cwnd(sk);
 }
 
 static struct tcp_congestion_ops vanilla __read_mostly = {

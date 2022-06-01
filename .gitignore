@@ -5,6 +5,7 @@ __pycache__
 *.pyc
 
 *.ko
+*.d
 Module*
 module*
 
