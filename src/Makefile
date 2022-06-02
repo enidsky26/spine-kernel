@@ -34,3 +34,9 @@ all:
 
 clean:
 	$(MAKE) -C /lib/modules/$(shell uname -r)/build M=$(CURDIR) clean
+
+install: all
+	-sudo ./spine_kernel_load.sh $(TARGET)
+
+uninstall:
+	-sudo rmmod $(TARGET).ko

@@ -8,7 +8,7 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-if [ -z "lsmod | grep 'ccp'" ]; then
+if [ -z "lsmod | grep '$module'" ]; then
     echo "$(module) kernel module already loaded"
     exit 1
 fi

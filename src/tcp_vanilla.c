@@ -74,6 +74,7 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 	ca->beta = params[1];
 	ca->gamma = params[2];
 	ca->delta = params[3];
+    // pr_info("update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca->alpha, ca->beta, ca->gamma, ca->delta);
 }
 
 void vanilla_release(struct sock *sk)
@@ -89,10 +90,10 @@ void vanilla_release(struct sock *sk)
 
 static inline void vanilla_reset(struct vanilla *ca)
 {
-	ca->alpha = 1024;
-	ca->beta = 1024;
-	ca->gamma = 1024;
-	ca->delta = 1024;
+	ca->alpha = 50;
+	ca->beta = 200;
+	ca->gamma = 200;
+	ca->delta = 717;
 
 	ca->min_rtt_us = 0x7fffffff;
 }

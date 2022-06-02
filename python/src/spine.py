@@ -17,11 +17,16 @@ from ipc_socket import IPCSocket
 from spine_flow import Flow, ActiveFlowMap, EnvFlows
 from poller import Action, Poller, ReturnStatus, PollEvents
 from helper import drop_privileges
+import msg_sender
 
 # communication between spine-user-space and kernel
 nl_sock = None
 # communication between spine-user-space and Env
 unix_sock = None
+# kernel cc alg
+kernel_cc = None
+# message sender 
+nl_send = None
 # cont status of polling
 cont = threading.Event()
 env_flows = EnvFlows()
@@ -138,26 +143,8 @@ def read_unix_message(unix_sock: IPCSocket):
     if data["action"] is None:
         return ReturnStatus.Continue
 
-    if "cubic_beta" in data["action"] and "cubic_bic_scale" in data["action"]:
-        cubic_beta = int(data["action"]["cubic_beta"])
-        cubic_bic_scale = int(data["action"]["cubic_bic_scale"])
-        # log.info(
-        #     "cubic_beta: {}, cubic_bic_scale: {}".format(cubic_beta, cubic_bic_scale)
-        # )
-        msg = UpdateMsg()
-        msg.add_field(
-            UpdateField().create(VOLATILE_CONTROL_REG, CUBIC_BETA_REG, cubic_beta)
-        )
-        msg.add_field(
-            UpdateField().create(
-                VOLATILE_CONTROL_REG, CUBIC_BIC_SCALE_REG, cubic_bic_scale
-            )
-        )
-        update_msg = msg.serialize()
-        nl_hdr = SpineMsgHeader()
-        nl_hdr.create(UPDATE_FIELDS, len(update_msg) + nl_hdr.hdr_len, sock_id)
-        nl_sock.send_msg(nl_hdr.serialize() + update_msg)
-        # log.info("send control to kernel flow: {}".format(sock_id))
+    assert nl_send != None
+    nl_send(data["action"], nl_sock, sock_id)
     return ReturnStatus.Continue
 
 
@@ -231,6 +218,13 @@ if __name__ == "__main__":
         default="tianhan",
         help="the effective user after drop root privileges, we assume the same gid_name as uid_name",
     )
+    parser.add_argument(
+        "--alg",
+        "-a",
+        type=str,
+        default="vanilla",
+        help="kernel CC algorithm",
+    )
     args = parser.parse_args()
     nl_sock = build_netlink_sock()
     drop_privileges(uid_name=args.user, gid_name=args.user)
@@ -241,4 +235,7 @@ if __name__ == "__main__":
     unix_sock = build_unix_sock(args.ipc)
     # mod: 775
     os.chmod(args.ipc, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
+    # assign netlink message sender
+    kernel_cc = args.alg
+    nl_send = getattr(msg_sender, "send_{}_message".format(kernel_cc))
     main(args)
