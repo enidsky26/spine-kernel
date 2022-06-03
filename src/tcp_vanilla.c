@@ -94,7 +94,7 @@ static inline void vanilla_reset(struct vanilla *ca)
 	ca->beta = 200;
 	ca->gamma = 200;
 	ca->delta = 717;
-
+	ca->cnt = 0;
 	ca->min_rtt_us = 0x7fffffff;
 }
 
@@ -178,17 +178,16 @@ static void vanilla_set_cwnd(struct sock *sk)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
 	u32 cwnd = tp->snd_cwnd;
-	int delta = ca->cnt;
-    do_div(delta, VANILLA_SCALE);
+	int delta = ca->cnt / VANILLA_SCALE;
 
 	if (delta != 0) {
-		ca->cnt -= delta * 1024;
+		ca->cnt -= delta * VANILLA_SCALE;
 		cwnd += delta;
 	}
-
 	/* apply global cap */
 	cwnd = max(cwnd, 10U);
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+	// printk(KERN_INFO "[VANILLA] Delta: %d , cwnd: %d, cnt: %d.\n", delta, tp->snd_cwnd, ca->cnt);
 }
 
 static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
@@ -196,11 +195,12 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
 	struct spine_connection *conn = ca->conn;
-	// u32 acked = rs->delivered;
+	u32 acked = rs->delivered;
 	int ok = 0;
 
-	if (!tcp_is_cwnd_limited(sk))
-		return;
+	//printk(KERN_INFO "[VANILLA] Get into control0.\n");
+	//if (!tcp_is_cwnd_limited(sk))
+	//	return;
 
 	// if (tcp_in_slow_start(tp)) {
 	// 	acked = tcp_slow_start(tp, acked);
@@ -214,8 +214,12 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
      * 2. how to change cwnd in loss recovery
      */
 
-	if (rs->delivered < 0 || rs->interval_us < 0)
+	if (rs->delivered < 0 || rs->interval_us < 0){
+		printk(KERN_INFO "[VANILLA] Get out of control %d %d.\n", rs->delivered, rs->interval_us);
 		return;
+	}
+
+	//printk(KERN_INFO "[VANILLA] Get into control1.\n");
 	/* call spine to update parameters if needed */
 	if (conn != NULL) {
 		// if there are staged parameters update, then
@@ -232,17 +236,24 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	int change;
 	u64 lat_inflation;
 
+	//printk(KERN_INFO "[VANILLA] Get into control2.\n");
 	lat_inflation = rs->rtt_us * VANILLA_SCALE;
 	do_div(lat_inflation, ca->min_rtt_us);
-	lat_inflation = lat_inflation - 1 * VANILLA_SCALE - ca->gamma;
-    do_div(lat_inflation, VANILLA_SCALE);
-	change = ca->alpha - ca->beta * lat_inflation;
+	if (lat_inflation > VANILLA_SCALE + ca->gamma){
+		lat_inflation = lat_inflation - VANILLA_SCALE - ca->gamma;
+    	do_div(lat_inflation, VANILLA_SCALE);
+		change = ca->alpha - ca->beta * lat_inflation;
+	}
+	else{
+		change = ca->alpha;
+	}
 	// bound the change
 	change = min(change, 1024);
 	change = max(change, -512);
 	ca->cnt += change;
 
 	// try to enforce cwnd changes
+	//printk(KERN_INFO "[VANILLA] Get into control3.\n");
 	vanilla_set_cwnd(sk);
 }
 
