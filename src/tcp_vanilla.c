@@ -75,6 +75,27 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 	ca->gamma = params[2];
 	ca->delta = params[3];
     // pr_info("update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca->alpha, ca->beta, ca->gamma, ca->delta);
+    // pr_info("current cwnd: %d\n", tcp_sk(sk)->snd_cwnd);
+}
+
+static void vanilla_update_pacing_rate(struct sock* sk) {
+  const struct tcp_sock* tp = tcp_sk(sk);
+  u64 rate;
+  cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
+
+  rate = tcp_mss_to_mtu(sk, tcp_sk(sk)->mss_cache);  //
+
+  rate *= USEC_PER_SEC;
+
+  rate *= max(tp->snd_cwnd, tp->packets_out);
+
+  if (likely(tp->srtt_us >> 3)) do_div(rate, tp->srtt_us >> 3);
+
+  /* WRITE_ONCE() is needed because sch_fq fetches sk_pacing_rate
+   * without any lock. We want to make sure compiler wont store
+   * intermediate values in this location.
+   */
+  WRITE_ONCE(sk->sk_pacing_rate, min_t(u64, rate, sk->sk_max_pacing_rate));
 }
 
 void vanilla_release(struct sock *sk)
@@ -187,7 +208,7 @@ static void vanilla_set_cwnd(struct sock *sk)
 	/* apply global cap */
 	cwnd = max(cwnd, 10U);
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
-	// printk(KERN_INFO "[VANILLA] Delta: %d , cwnd: %d, cnt: %d.\n", delta, tp->snd_cwnd, ca->cnt);
+    vanilla_update_pacing_rate(sk);
 }
 
 static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
@@ -197,10 +218,6 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	struct spine_connection *conn = ca->conn;
 	u32 acked = rs->delivered;
 	int ok = 0;
-
-	//printk(KERN_INFO "[VANILLA] Get into control0.\n");
-	//if (!tcp_is_cwnd_limited(sk))
-	//	return;
 
 	// if (tcp_in_slow_start(tp)) {
 	// 	acked = tcp_slow_start(tp, acked);
