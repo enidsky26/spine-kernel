@@ -19,8 +19,11 @@ extern struct timespec64 tzero;
 /* TCP Vanilla Parameters */
 struct vanilla {
 	u32 min_rtt_us; /* minimum observed RTT */
-
 	int cnt; /*  cwnd change */
+	u8 prev_ca_state; /* prev ca state */
+	bool in_recovery;
+	u32 prior_cwnd; /* cwnd before loss */
+	u32 r_cwnd; /* cwnd in loss or recovery */
 
 	/* control parameters, which would be modified by user-space RL algorithm 
      * these variables are all bounds in [0, 1024]
@@ -74,28 +77,31 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 	ca->beta = params[1];
 	ca->gamma = params[2];
 	ca->delta = params[3];
-    // pr_info("update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca->alpha, ca->beta, ca->gamma, ca->delta);
-    // pr_info("current cwnd: %d\n", tcp_sk(sk)->snd_cwnd);
+	// pr_info("update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca->alpha, ca->beta, ca->gamma, ca->delta);
+	// pr_info("current cwnd: %d\n", tcp_sk(sk)->snd_cwnd);
 }
 
-static void vanilla_update_pacing_rate(struct sock* sk) {
-  const struct tcp_sock* tp = tcp_sk(sk);
-  u64 rate;
-  cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
+static void vanilla_update_pacing_rate(struct sock *sk)
+{
+	const struct tcp_sock *tp = tcp_sk(sk);
+	u64 rate;
+	cmpxchg(&sk->sk_pacing_status, SK_PACING_NONE, SK_PACING_NEEDED);
 
-  rate = tcp_mss_to_mtu(sk, tcp_sk(sk)->mss_cache);  //
+	rate = tcp_mss_to_mtu(sk, tcp_sk(sk)->mss_cache); //
 
-  rate *= USEC_PER_SEC;
+	rate *= USEC_PER_SEC;
 
-  rate *= max(tp->snd_cwnd, tp->packets_out);
+	rate *= max(tp->snd_cwnd, tp->packets_out);
 
-  if (likely(tp->srtt_us >> 3)) do_div(rate, tp->srtt_us >> 3);
+	if (likely(tp->srtt_us >> 3))
+		do_div(rate, tp->srtt_us >> 3);
 
-  /* WRITE_ONCE() is needed because sch_fq fetches sk_pacing_rate
+	/* WRITE_ONCE() is needed because sch_fq fetches sk_pacing_rate
    * without any lock. We want to make sure compiler wont store
    * intermediate values in this location.
    */
-  WRITE_ONCE(sk->sk_pacing_rate, min_t(u64, rate, sk->sk_max_pacing_rate));
+	WRITE_ONCE(sk->sk_pacing_rate,
+		   min_t(u64, rate, sk->sk_max_pacing_rate));
 }
 
 void vanilla_release(struct sock *sk)
@@ -117,6 +123,10 @@ static inline void vanilla_reset(struct vanilla *ca)
 	ca->delta = 717;
 
 	ca->min_rtt_us = 0x7fffffff;
+	ca->prev_ca_state = TCP_CA_Open;
+	ca->in_recovery = false;
+	ca->prior_cwnd = 0;
+	ca->r_cwnd = 0;
 }
 
 static void vanilla_init(struct sock *sk)
@@ -158,19 +168,38 @@ static void vanilla_cong_avoid(struct sock *sk, u32 ack, u32 acked)
 {
 }
 
+static void vanilla_save_cwnd(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct vanilla *ca = inet_csk_ca(sk);
+
+	if (ca->prev_ca_state < TCP_CA_Recovery)
+		ca->prior_cwnd = tp->snd_cwnd;
+	else
+		ca->prior_cwnd = max(ca->prior_cwnd, tp->snd_cwnd);
+}
+
 static u32 vanilla_ssthresh(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
 
-	// TODO: We may have some sanity check here
 	u32 target = ca->delta * tp->snd_cwnd;
 	do_div(target, VANILLA_SCALE);
-	return target;
+
+	vanilla_save_cwnd(sk);
+	// actually we want to cwnd to be target
+	ca->r_cwnd = target;
+	return tp->snd_cwnd;
 }
 
-static void vanilla_state(struct sock *sk, u8 new_state)
+static void vanilla_set_state(struct sock *sk, u8 new_state)
 {
+	struct vanilla *ca = inet_csk_ca(sk);
+
+	if (new_state == TCP_CA_Loss) {
+		ca->prev_ca_state = TCP_CA_Loss;
+	}
 }
 
 static void vanilla_pkt_acked(struct sock *sk, const struct ack_sample *sample)
@@ -193,14 +222,47 @@ static u32 vanilla_undo_cwnd(struct sock *sk)
 	return tcp_reno_undo_cwnd(sk);
 }
 
-static void vanilla_set_cwnd(struct sock *sk)
+static bool vanilla_set_cwnd_recovery_restore(struct sock *sk, u32 acked,
+					      u32 *new_cwnd)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct vanilla *ca = inet_csk_ca(sk);
+	u8 prev_state = ca->prev_ca_state, state = inet_csk(sk)->icsk_ca_state;
+	u32 cwnd = tp->snd_cwnd;
+
+	if (state == TCP_CA_Recovery && prev_state != TCP_CA_Recovery) {
+		/* Starting 1st round of Recovery, so do packet conservation. */
+		// cwnd = tcp_packets_in_flight(tp) + acked;
+		// we directly applid the multiplicative decreased cwnd
+		cwnd = ca->r_cwnd;
+		ca->in_recovery = true;
+	} else if (prev_state >= TCP_CA_Recovery && state < TCP_CA_Recovery) {
+		/* Exiting loss recovery; restore cwnd saved before recovery. */
+		cwnd = max(cwnd, ca->prior_cwnd);
+		ca->in_recovery = false;
+	}
+	ca->prev_ca_state = state;
+
+	if (ca->in_recovery) {
+		// *new_cwnd = max(cwnd, tcp_packets_in_flight(tp) + acked);
+		*new_cwnd = cwnd;
+		return true; /* yes, using packet conservation */
+	}
+	*new_cwnd = cwnd;
+	return false;
+}
+
+static void vanilla_set_cwnd(struct sock *sk, u32 acked)
 {
 	// do_div(change, VANILLA_SCALE);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
 	u32 cwnd = tp->snd_cwnd;
 	int delta = ca->cnt;
-    do_div(delta, VANILLA_SCALE);
+	do_div(delta, VANILLA_SCALE);
+
+    /* set cwnd base to r_cwnd if ca is in recovery */
+	vanilla_set_cwnd_recovery_restore(sk, acked, &cwnd);
 
 	if (delta != 0) {
 		ca->cnt -= delta * 1024;
@@ -210,7 +272,7 @@ static void vanilla_set_cwnd(struct sock *sk)
 	/* apply global cap */
 	cwnd = max(cwnd, 10U);
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
-    vanilla_update_pacing_rate(sk);
+	vanilla_update_pacing_rate(sk);
 }
 
 static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
@@ -218,7 +280,7 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
 	struct spine_connection *conn = ca->conn;
-	// u32 acked = rs->delivered;
+	u32 acked = rs->delivered;
 	int ok = 0;
 
 	// if (!tcp_is_cwnd_limited(sk))
@@ -257,7 +319,7 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	lat_inflation = rs->rtt_us * VANILLA_SCALE;
 	do_div(lat_inflation, ca->min_rtt_us);
 	lat_inflation = lat_inflation - 1 * VANILLA_SCALE - ca->gamma;
-    do_div(lat_inflation, VANILLA_SCALE);
+	do_div(lat_inflation, VANILLA_SCALE);
 	change = ca->alpha - ca->beta * lat_inflation;
 	// bound the change
 	change = min(change, 1024);
@@ -265,7 +327,7 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	ca->cnt += change;
 
 	// try to enforce cwnd changes
-	vanilla_set_cwnd(sk);
+	vanilla_set_cwnd(sk, acked);
 }
 
 static struct tcp_congestion_ops vanilla __read_mostly = {
@@ -274,7 +336,7 @@ static struct tcp_congestion_ops vanilla __read_mostly = {
 	.ssthresh = vanilla_ssthresh,
 	// .cong_avoid = vanilla_cong_avoid,
 	.cong_control = vanilla_cong_control,
-	.set_state = vanilla_state,
+	.set_state = vanilla_set_state,
 	.undo_cwnd = vanilla_undo_cwnd,
 	// .cwnd_event = vanilla_cwnd_event,
 	.pkts_acked = vanilla_pkt_acked,
