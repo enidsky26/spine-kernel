@@ -165,7 +165,9 @@ static u32 vanilla_ssthresh(struct sock *sk)
 
 	// TODO: We may have some sanity check here
 	u32 target = ca->delta * tp->snd_cwnd;
+	printk(KERN_INFO "[VANILLA] new CWND before loss event: %d.\n",  tp->snd_cwnd);
 	do_div(target, VANILLA_SCALE);
+	printk(KERN_INFO "[VANILLA] new CWND after loss event: %d.\n", target);
 	return target;
 }
 
@@ -208,6 +210,8 @@ static void vanilla_set_cwnd(struct sock *sk)
 	/* apply global cap */
 	cwnd = max(cwnd, 10U);
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
+
+	printk(KERN_INFO "[VANILLA] New CWND %d.\n", tp->snd_cwnd);
     vanilla_update_pacing_rate(sk);
 }
 
