@@ -53,8 +53,8 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 {
 	struct sock *sk;
 	// struct tcp_sock *tp = tcp_sk(sk);
-	struct vanilla *ca = inet_csk_ca(sk);
 	get_sock_from_spine(&sk, conn);
+	struct vanilla *ca = inet_csk_ca(sk);
 
 	if (conn == NULL || params == NULL) {
 		pr_info("%s:conn/params is NULL\n", __FUNCTION__);
@@ -63,13 +63,13 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 
 	if (unlikely(conn->flow_info.alg != SPINE_VANILLA) ||
 	    unlikely(num_fields != VANILLA_PARAM_NUM)) {
-		pr_info("Unknown internal congestion control algorithm, do nothing");
+		pr_info("Unknown internal congestion control algorithm, do nothing. %d", num_fields);
 		return;
 	}
 	for (int j = 0; j < num_fields; j++) {
 		if (!check_param(params[j])) {
-			pr_info("warning: invalid parameters on idx:%d, ignore this run\n",
-				j);
+			pr_info("warning: invalid parameters on idx:%d, value: %d, ignore this run\n",
+				j,params[j]);
 			return;
 		}
 	}
@@ -78,6 +78,8 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 	ca->gamma = params[2];
 	ca->delta = params[3];
 	// pr_info("update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca->alpha, ca->beta, ca->gamma, ca->delta);
+	// struct vanilla *ca2 = inet_csk_ca(sk);
+	// pr_info("check update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca2->alpha, ca2->beta, ca2->gamma, ca2->delta);
 	// pr_info("current cwnd: %d\n", tcp_sk(sk)->snd_cwnd);
 }
 
@@ -185,7 +187,7 @@ static u32 vanilla_ssthresh(struct sock *sk)
 	struct vanilla *ca = inet_csk_ca(sk);
 
 	u32 target = ca->delta * tp->snd_cwnd;
-	// printk(KERN_INFO "[VANILLA] new CWND before loss event: %d.\n",  tp->snd_cwnd);
+	// printk(KERN_INFO "[VANILLA] new CWND before loss event: %d, current delta: %d.\n, ",  tp->snd_cwnd, ca->delta);
 	do_div(target, VANILLA_SCALE);
 	/// vanilla_save_cwnd(sk);
 	ca->prior_cwnd = tp->snd_cwnd;
@@ -270,11 +272,11 @@ static void vanilla_set_cwnd(struct sock *sk, u32 acked)
 	if (delta != 0) {
 		ca->cnt -= delta * VANILLA_SCALE;
 		cwnd += delta;
+		// printk(KERN_INFO "[VANILLA] New CWND %d, used delta: %d.\n", cwnd, delta);
 	}
 	/* apply global cap */
 	cwnd = max(cwnd, 10U);
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
-	// printk(KERN_INFO "[VANILLA] New CWND %d.\n", tp->snd_cwnd);
     vanilla_update_pacing_rate(sk);
 }
 
@@ -322,14 +324,15 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	//printk(KERN_INFO "[VANILLA] Get into control2.\n");
 	lat_inflation = rs->rtt_us * VANILLA_SCALE;
 	do_div(lat_inflation, ca->min_rtt_us);
-	if (lat_inflation > VANILLA_SCALE + ca->gamma){
-		lat_inflation = lat_inflation - VANILLA_SCALE - ca->gamma;
+	if (lat_inflation > (VANILLA_SCALE + ca->gamma)){
+		lat_inflation = (lat_inflation - VANILLA_SCALE - ca->gamma) * ca->beta;
     	do_div(lat_inflation, VANILLA_SCALE);
-		change = ca->alpha - ca->beta * lat_inflation;
+		change = ca->alpha - lat_inflation;
 	}
 	else{
 		change = ca->alpha;
 	}
+	// printk(KERN_INFO "[VANILLA]Control info: change %d.\n", change);
 
 	// bound the change
 	change = min(change, 1024);
