@@ -124,6 +124,7 @@ def read_unix_message(unix_sock: IPCSocket):
         flow_id = make_flow_id(port)
         env_flows.bind_port_to_env(port, env_id)
         active_flow_map.add_flow_with_dst_port(port, flow_id)
+        log.info("new flow with port: {}, assigned flow id: {}".format(port, flow_id)) 
         return ReturnStatus.Continue
 
     flow_id = active_flow_map.get_flowId_by_port(port)
@@ -132,10 +133,11 @@ def read_unix_message(unix_sock: IPCSocket):
     if msg_type == MessageType.END.value:
         # we need the dsr_port id to remove the cache
         sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
+        log.info("flow exits with port: {}".format(port)) 
         # port = active_flow_map.remove_flow_by_flowId(flow_id)
         # remove cached items
         env_flows.release_port_to_env(port)
-        return ReturnStatus.Continue
+        return ReturnStatus.Cancel
     # message should be ALIVE
     if msg_type != MessageType.ALIVE.value:
         log.error("Incorrect message type: {}".format(msg_type))
@@ -144,7 +146,7 @@ def read_unix_message(unix_sock: IPCSocket):
     sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
     if sock_id == None:
         # log.warn("unknown flow id: {}".format(flow_id))
-        return ReturnStatus.Continue
+        return ReturnStatus.Cancel
 
     # spine semantics: None means no action is need
     if data["action"] is None:
