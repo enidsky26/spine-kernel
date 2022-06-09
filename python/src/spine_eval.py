@@ -239,11 +239,11 @@ if __name__ == "__main__":
     # after build netlink socket, we try to drop root privilege
     # build communication sockets
     if args.ipc is None:
-        args.ipc = "{}_{}".format(default_unix_file, args.user)
+        args.ipc = "{}".format(default_unix_file)
     unix_sock = build_unix_sock(args.ipc)
     # mod: 775
     os.chmod(args.ipc, stat.S_IRWXU | stat.S_IRWXG | stat.S_IROTH | stat.S_IXOTH)
     # assign netlink message sender
     kernel_cc = args.alg
-    nl_send = getattr(msg_sender, "send_{}_message".format(kernel_cc))
+    nl_send = getattr(msg_sender, "send_{}_message".format(kernel_cc)) 
     main(args)
