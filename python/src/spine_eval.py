@@ -134,7 +134,7 @@ def read_unix_message(unix_sock: IPCSocket):
         # we need the dsr_port id to remove the cache
         sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
         log.info("flow exits with port: {}".format(port)) 
-        # port = active_flow_map.remove_flow_by_flowId(flow_id)
+        port = active_flow_map.remove_flow_by_flowId(flow_id)
         # remove cached items
         env_flows.release_port_to_env(port)
         return ReturnStatus.Cancel
