@@ -322,17 +322,25 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	u64 lat_inflation;
 
 	//printk(KERN_INFO "[VANILLA] Get into control2.\n");
-	lat_inflation = rs->rtt_us * VANILLA_SCALE;
+	lat_inflation =  (tp->srtt_us >> 3) * VANILLA_SCALE ;
 	do_div(lat_inflation, ca->min_rtt_us);
 	if (lat_inflation > (VANILLA_SCALE + ca->gamma)){
 		lat_inflation = (lat_inflation - VANILLA_SCALE - ca->gamma) * ca->beta;
     	do_div(lat_inflation, VANILLA_SCALE);
 		change = ca->alpha - lat_inflation;
+		// printk(KERN_INFO "[VANILLA]Control info: rtt: %d, min_rtt: %d, lat_inflation: %d, base: %d, alpha: %d, change: %d.\n", 
+		// rs->rtt_us ,
+		// ca->min_rtt_us,
+		// lat_inflation,
+		// VANILLA_SCALE + ca->gamma,
+		// ca->alpha,
+		// change
+		// );
 	}
 	else{
 		change = ca->alpha;
 	}
-	// printk(KERN_INFO "[VANILLA]Control info: change %d.\n", change);
+
 
 	// bound the change
 	change = min(change, 1024);
