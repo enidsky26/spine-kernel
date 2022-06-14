@@ -74,7 +74,7 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 		}
 	}
 	ca->alpha = params[0];
-	ca->beta = params[1];
+	ca->beta = params[1] * 2;
 	ca->gamma = params[2];
 	ca->delta = params[3];
 	// pr_info("update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca->alpha, ca->beta, ca->gamma, ca->delta);
