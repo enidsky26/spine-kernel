@@ -260,7 +260,9 @@ static void vanilla_set_cwnd(struct sock *sk, u32 acked)
 	u8 prev_state = ca->prev_ca_state, state = inet_csk(sk)->icsk_ca_state;
 	u32 cwnd = tp->snd_cwnd;
 	int delta = ca->cnt;
-	do_div(delta, VANILLA_SCALE);
+	// printk(KERN_INFO "Delta before division: %d.\n", delta);
+		
+	delta = delta/VANILLA_SCALE;
 
     /* set cwnd base to r_cwnd if ca is in recovery */
 	// vanilla_set_cwnd_recovery_restore(sk, acked, &cwnd);
@@ -271,8 +273,8 @@ static void vanilla_set_cwnd(struct sock *sk, u32 acked)
 
 	if (delta != 0) {
 		ca->cnt -= delta * VANILLA_SCALE;
+		// printk(KERN_INFO "[VANILLA] Old CWND %d, New CWND %d.\n", cwnd, cwnd + delta);
 		cwnd += delta;
-		// printk(KERN_INFO "[VANILLA] New CWND %d, used delta: %d.\n", cwnd, delta);
 	}
 	/* apply global cap */
 	cwnd = max(cwnd, 10U);
@@ -328,14 +330,17 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 		lat_inflation = (lat_inflation - VANILLA_SCALE - ca->gamma) * ca->beta;
     	do_div(lat_inflation, VANILLA_SCALE);
 		change = ca->alpha - lat_inflation;
-		// printk(KERN_INFO "[VANILLA]Control info: rtt: %d, min_rtt: %d, lat_inflation: %d, base: %d, alpha: %d, change: %d.\n", 
-		// rs->rtt_us ,
-		// ca->min_rtt_us,
-		// lat_inflation,
-		// VANILLA_SCALE + ca->gamma,
-		// ca->alpha,
-		// change
-		// );
+		// printk(KERN_INFO "[VANILLA]Control info: rtt: %d, min_rtt: %d, lat_inflation: %d, base: %d, alpha: %d, beta: %d, gamma: %d, delta: %d, change: %d.\n", 
+		rs->rtt_us ,
+		ca->min_rtt_us,
+		lat_inflation,
+		VANILLA_SCALE + ca->gamma,
+		ca->alpha,
+		ca->beta,
+		ca->gamma,
+		ca->delta,
+		change
+		);
 	}
 	else{
 		change = ca->alpha;
@@ -346,6 +351,8 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	change = min(change, 1024);
 	change = max(change, -512);
 	ca->cnt += change;
+	// printk(KERN_INFO "[VANILLA] ca->cnt: %d.\n", ca->cnt);
+		
 
 	// try to enforce cwnd changes
 	vanilla_set_cwnd(sk, acked);
