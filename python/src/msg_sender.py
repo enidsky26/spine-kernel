@@ -17,9 +17,9 @@ vanilla_action_keys = {
 
 
 def send_scubic_message(data: dict, nl_sock: Netlink, sock_id):
-    if "cubic_beta" in data["action"] and "cubic_bic_scale" in data["action"]:
-        cubic_beta = int(data["action"]["cubic_beta"])
-        cubic_bic_scale = int(data["action"]["cubic_bic_scale"])
+    if "cubic_beta" in data.keys() and "cubic_bic_scale" in data.keys():
+        cubic_beta = int(data["cubic_beta"])
+        cubic_bic_scale = int(data["cubic_bic_scale"])
         # log.info(
         #     "cubic_beta: {}, cubic_bic_scale: {}".format(cubic_beta, cubic_bic_scale)
         # )

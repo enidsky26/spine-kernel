@@ -1,7 +1,7 @@
 
 DEBUG = n
 # by default build vanilla
-TARGET := $(or $(mod), vanilla)
+TARGET := $(or $(mod), scubic)
 
 $(info $$TARGET is [${TARGET}])
 
