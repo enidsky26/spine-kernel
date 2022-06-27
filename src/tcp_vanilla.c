@@ -74,8 +74,8 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 		}
 	}
 	ca->alpha = params[0];
-	ca->beta = params[1] * 2;
-	ca->gamma = params[2];
+	ca->beta = params[1];
+	ca->gamma = params[2] * 2;
 	ca->delta = params[3];
 	// pr_info("update alpha: %u, beta: %u, gamma: %u, delta: %u\n", ca->alpha, ca->beta, ca->gamma, ca->delta);
 	// struct vanilla *ca2 = inet_csk_ca(sk);
@@ -327,20 +327,20 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	lat_inflation =  (tp->srtt_us >> 3) * VANILLA_SCALE ;
 	do_div(lat_inflation, ca->min_rtt_us);
 	if (lat_inflation > (VANILLA_SCALE + ca->gamma)){
-		lat_inflation = (lat_inflation - VANILLA_SCALE - ca->gamma) * ca->beta;
-    	do_div(lat_inflation, VANILLA_SCALE);
-		change = ca->alpha - lat_inflation;
+		// lat_inflation = (lat_inflation - VANILLA_SCALE - ca->gamma) * ca->beta;
+    	// do_div(lat_inflation, VANILLA_SCALE);
+		change = -ca->beta;
 		// printk(KERN_INFO "[VANILLA]Control info: rtt: %d, min_rtt: %d, lat_inflation: %d, base: %d, alpha: %d, beta: %d, gamma: %d, delta: %d, change: %d.\n", 
-		rs->rtt_us ,
-		ca->min_rtt_us,
-		lat_inflation,
-		VANILLA_SCALE + ca->gamma,
-		ca->alpha,
-		ca->beta,
-		ca->gamma,
-		ca->delta,
-		change
-		);
+		// rs->rtt_us ,
+		// ca->min_rtt_us,
+		// lat_inflation,
+		// VANILLA_SCALE + ca->gamma,
+		// ca->alpha,
+		// ca->beta,
+		// ca->gamma,
+		// ca->delta,
+		// change
+		// );
 	}
 	else{
 		change = ca->alpha;
