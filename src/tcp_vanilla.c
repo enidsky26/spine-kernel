@@ -33,6 +33,8 @@ struct vanilla {
 	u16 gamma;
 	u16 delta; /* control how much the ssthresh should be from current cwnd */
 
+	u8 slow_start_passed;
+
 	/* communication */
 	struct spine_connection *conn;
 };
@@ -63,13 +65,14 @@ void vanilla_set_params(struct spine_connection *conn, u64 *params,
 
 	if (unlikely(conn->flow_info.alg != SPINE_VANILLA) ||
 	    unlikely(num_fields != VANILLA_PARAM_NUM)) {
-		pr_info("Unknown internal congestion control algorithm, do nothing. %d", num_fields);
+		pr_info("Unknown internal congestion control algorithm, do nothing. %d",
+			num_fields);
 		return;
 	}
 	for (int j = 0; j < num_fields; j++) {
 		if (!check_param(params[j])) {
 			pr_info("warning: invalid parameters on idx:%d, value: %d, ignore this run\n",
-				j,params[j]);
+				j, params[j]);
 			return;
 		}
 	}
@@ -129,6 +132,7 @@ static inline void vanilla_reset(struct vanilla *ca)
 	ca->in_recovery = false;
 	ca->prior_cwnd = 0;
 	ca->r_cwnd = 0;
+	ca->slow_start_passed = 0;
 }
 
 static void vanilla_init(struct sock *sk)
@@ -185,6 +189,9 @@ static u32 vanilla_ssthresh(struct sock *sk)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
+
+	if (!ca->slow_start_passed)
+		ca->slow_start_passed = 1;
 
 	u32 target = ca->delta * tp->snd_cwnd;
 	// printk(KERN_INFO "[VANILLA] new CWND before loss event: %d, current delta: %d.\n, ",  tp->snd_cwnd, ca->delta);
@@ -261,12 +268,12 @@ static void vanilla_set_cwnd(struct sock *sk, u32 acked)
 	u32 cwnd = tp->snd_cwnd;
 	int delta = ca->cnt;
 	// printk(KERN_INFO "Delta before division: %d.\n", delta);
-		
-	delta = delta/VANILLA_SCALE;
 
-    /* set cwnd base to r_cwnd if ca is in recovery */
+	delta = delta / VANILLA_SCALE;
+
+	// set cwnd base to r_cwnd if ca is in recovery
 	// vanilla_set_cwnd_recovery_restore(sk, acked, &cwnd);
-	if(prev_state >= TCP_CA_Recovery && state < TCP_CA_Recovery) {
+	if (prev_state >= TCP_CA_Recovery && state < TCP_CA_Recovery) {
 		/* Exiting loss recovery; restore cwnd saved before recovery. */
 		cwnd = max(cwnd, ca->prior_cwnd);
 	}
@@ -279,7 +286,7 @@ static void vanilla_set_cwnd(struct sock *sk, u32 acked)
 	/* apply global cap */
 	cwnd = max(cwnd, 10U);
 	tp->snd_cwnd = min(cwnd, tp->snd_cwnd_clamp);
-    vanilla_update_pacing_rate(sk);
+	vanilla_update_pacing_rate(sk);
 }
 
 static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
@@ -290,24 +297,19 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	u32 acked = rs->delivered;
 	int ok = 0;
 
-	// if (tcp_in_slow_start(tp)) {
-	// 	acked = tcp_slow_start(tp, acked);
-	// 	if (!acked)
-	// 		return;
-	// 	/* otherwise, we can send more ... */
-	// }
+	// we only do slow start when flow starts
+	if (tcp_in_slow_start(tp) && !ca->slow_start_passed) {
+		acked = tcp_slow_start(tp, acked);
+		if (!acked)
+			return;
+	}
 
-	/* TODO: 
-     * 1. TCP slow start
-     * 2. how to change cwnd in loss recovery
-     */
-
-	if (rs->delivered < 0 || rs->interval_us < 0){
+	if (rs->delivered < 0 || rs->interval_us < 0) {
 		return;
 	}
 
-	//printk(KERN_INFO "[VANILLA] Get into control1.\n");
-	/* call spine to update parameters if needed */
+	// printk(KERN_INFO "[VANILLA] Get into control1.\n");
+	// call spine to update parameters if needed
 	if (conn != NULL) {
 		// if there are staged parameters update, then
 		// corressponding params inside ca would be updated
@@ -323,14 +325,14 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	int change;
 	u64 lat_inflation;
 
-	//printk(KERN_INFO "[VANILLA] Get into control2.\n");
-	lat_inflation =  (tp->srtt_us >> 3) * VANILLA_SCALE ;
+	// printk(KERN_INFO "[VANILLA] Get into control2.\n");
+	lat_inflation = (tp->srtt_us >> 3) * VANILLA_SCALE;
 	do_div(lat_inflation, ca->min_rtt_us);
-	if (lat_inflation > (VANILLA_SCALE + ca->gamma)){
+	if (lat_inflation > (VANILLA_SCALE + ca->gamma)) {
 		// lat_inflation = (lat_inflation - VANILLA_SCALE - ca->gamma) * ca->beta;
-    	// do_div(lat_inflation, VANILLA_SCALE);
+		// do_div(lat_inflation, VANILLA_SCALE);
 		change = -ca->beta;
-		// printk(KERN_INFO "[VANILLA]Control info: rtt: %d, min_rtt: %d, lat_inflation: %d, base: %d, alpha: %d, beta: %d, gamma: %d, delta: %d, change: %d.\n", 
+		// printk(KERN_INFO "[VANILLA]Control info: rtt: %d, min_rtt: %d, lat_inflation: %d, base: %d, alpha: %d, beta: %d, gamma: %d, delta: %d, change: %d.\n",
 		// rs->rtt_us ,
 		// ca->min_rtt_us,
 		// lat_inflation,
@@ -341,18 +343,15 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 		// ca->delta,
 		// change
 		// );
-	}
-	else{
+	} else {
 		change = ca->alpha;
 	}
-
 
 	// bound the change
 	change = min(change, 1024);
 	change = max(change, -512);
 	ca->cnt += change;
 	// printk(KERN_INFO "[VANILLA] ca->cnt: %d.\n", ca->cnt);
-		
 
 	// try to enforce cwnd changes
 	vanilla_set_cwnd(sk, acked);
