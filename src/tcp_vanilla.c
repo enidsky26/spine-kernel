@@ -193,8 +193,8 @@ static u32 vanilla_ssthresh(struct sock *sk)
 	if (!ca->slow_start_passed)
 		ca->slow_start_passed = 1;
 
+	// printk(KERN_INFO "[VANILLA] NEW CWND when loss happens: %d.\n, ",  tp->snd_cwnd);
 	u32 target = ca->delta * tp->snd_cwnd;
-	// printk(KERN_INFO "[VANILLA] new CWND before loss event: %d, current delta: %d.\n, ",  tp->snd_cwnd, ca->delta);
 	do_div(target, VANILLA_SCALE);
 	/// vanilla_save_cwnd(sk);
 	ca->prior_cwnd = tp->snd_cwnd;
@@ -289,19 +289,28 @@ static void vanilla_set_cwnd(struct sock *sk, u32 acked)
 	vanilla_update_pacing_rate(sk);
 }
 
+
+u32 spine_slow_start(struct sock *sk, u32 acked)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct vanilla *ca = inet_csk_ca(sk);
+	ca->cnt += acked * 100;
+	vanilla_set_cwnd(sk, acked);
+}
+
 static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct vanilla *ca = inet_csk_ca(sk);
 	struct spine_connection *conn = ca->conn;
-	u32 acked = rs->delivered;
+	u32 acked = rs->acked_sacked; //rs->delivered;
 	int ok = 0;
 
 	// we only do slow start when flow starts
 	if (tcp_in_slow_start(tp) && !ca->slow_start_passed) {
-		acked = tcp_slow_start(tp, acked);
-		if (!acked)
-			return;
+		// printk(KERN_INFO "[VANILLA] acked: %d, delivered %d.\n, ",  rs->acked_sacked, rs->delivered);
+		spine_slow_start(sk, acked);
+		return;
 	}
 
 	if (rs->delivered < 0 || rs->interval_us < 0) {
