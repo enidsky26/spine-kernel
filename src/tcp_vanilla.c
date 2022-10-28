@@ -310,7 +310,6 @@ static void vanilla_cong_control(struct sock *sk, const struct rate_sample *rs)
 	if (tcp_in_slow_start(tp) && !ca->slow_start_passed) {
 		// printk(KERN_INFO "[VANILLA] acked: %d, delivered %d.\n, ",  rs->acked_sacked, rs->delivered);
 		spine_slow_start(sk, acked);
-		return;
 	}
 
 	if (rs->delivered < 0 || rs->interval_us < 0) {
