@@ -1,6 +1,6 @@
 #!/bin/bash
 
-module=${1:-"scubic"}
+module=${1:-"vanilla"}
 mode="664"
 
 if [ "$EUID" -ne 0 ]; then 

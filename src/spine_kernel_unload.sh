@@ -1,6 +1,6 @@
 #!/bin/bash
 
-module=${1:-"scubic"}
+module=${1:-"vanilla"}
 
 if [ "$EUID" -ne 0 ]; then 
     echo "error: must run as root"
