@@ -23,14 +23,14 @@ extern struct timespec64 tzero;
 struct neo_interval {
 	u64 rate; /* sending rate of this interval, bytes/sec */
 
-	s64 recv_start; /* timestamps for when interval was waiting for acks */
-	s64 recv_end;
+	u64 recv_start; /* timestamps for when interval was waiting for acks */
+	u64 recv_end;
 
-	s64 send_start; /* timestamps for when interval data was being sent */
-	s64 send_end;
+	u64 send_start; /* timestamps for when interval data was being sent */
+	u64 send_end;
 
-	s64 start_rtt; /* smoothed RTT at start and end of this interval */
-	s64 end_rtt;
+	u64 start_rtt; /* smoothed RTT at start and end of this interval */
+	u64 end_rtt;
 
 	u32 packets_sent_base; /* packets sent when this interval started */
 	u32 packets_ended; /* packets sent when this interval ended */
@@ -42,9 +42,7 @@ struct neo_interval {
 /* TCP NEO Parameters */
 struct neo_data {
 	int cnt; /*  cwnd change */
-	u8 prev_ca_state; /* prev ca state */
 	bool in_recovery;
-	u32 prior_cwnd; /* cwnd before loss */
 	u32 r_cwnd; /* cwnd in loss or recovery */
 
 	u8 slow_start_passed;
@@ -55,8 +53,8 @@ struct neo_data {
 	int send_index; /* index of interval currently being sent */
 	int receive_index; /* index of interval currently receiving acks */
 
-	s64 rate; /* current sending rate */
-	s64 ready_rate; /* rate updated by RL model, used in the next MI */
+	u64 rate; /* current sending rate */
+	u64 ready_rate; /* rate updated by RL model, used in the next MI */
 
 	u32 lost_base; /* previously lost packets */
 	u32 delivered_base; /* previously delivered packets */
@@ -182,7 +180,7 @@ void start_interval(struct sock *sk, struct neo_data *neo)
 bool send_interval_ended(struct neo_interval *interval, struct tcp_sock *tsk,
 			 struct neo_data *neo)
 {
-	s64 now = tsk->tcp_mstamp;
+	u64 now = tsk->tcp_mstamp;
 	if (now - interval->send_start >= MONITOR_INTERVAL) {
 		interval->packets_ended = tsk->data_segs_out;
 		return true;
@@ -279,7 +277,8 @@ void neo_process(struct sock *sk)
  *
  */
 
-static *s64 get_state(struct spine_connection *conn, u64 *params, u8 num_fields)
+static *u64 neo_get_state(struct spine_connection *conn, u64 *params,
+			  u8 num_fields)
 {
 	struct sock *sk;
 	get_sock_from_spine(&sk, conn);
@@ -298,9 +297,9 @@ static *s64 get_state(struct spine_connection *conn, u64 *params, u8 num_fields)
 	}
 	int last_received_id = get_previous_index(
 		neo->receive_index) int last_last_received_id =
-		get_previous_index(last_received_id)
+		get_previous_index(last_received_id);
 
-			params[0] = neo->intervals[last_received_id].delivered;
+	params[0] = neo->intervals[last_received_id].delivered;
 	params[1] = neo->intervals[last_last_received_id].delivered;
 	params[2] = neo->intervals[last_received_id].loss;
 	params[3] = neo->intervals[last_last_received_id].loss;
@@ -574,6 +573,7 @@ static int __init neo_register(void)
 	kernel_datapath->log = &spine_log;
 	kernel_datapath->set_params = &neo_set_params;
 	kernel_datapath->send_msg = &nl_sendmsg;
+	kernel_datapath->fetch_measurements = &neo_get_state;
 
 	/* Here we need to add a IPC for receiving messages from user space 
 	 * RL controller.

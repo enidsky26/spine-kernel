@@ -116,6 +116,10 @@ struct spine_datapath {
 	void (*set_rate_abs)(struct spine_connection *conn, u32 rate);
 	void (*set_params)(struct spine_connection *conn, u64 *params,
 			   u8 num_fields);
+	/* fetch measurements from cc module. if success, the num_fields is set with a positive value and feilds is stored in measurements */
+	void (*fetch_measurements)(struct spine_connection *conn,
+				   u64 *measurements, u8 *num_fields,
+				   u32 request_index);
 
 	// IPC communication
 	int (*send_msg)(struct spine_datapath *dp, char *msg, int msg_size);

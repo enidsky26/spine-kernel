@@ -125,7 +125,7 @@ int write_measure_msg(char *buf, int bufsize, u32 sid, u32 program_uid,
 {
 	int ret;
 	struct MeasureMsg ms = {
-		.program_uid = program_uid,
+		.program_uid = 1,
 		.num_fields = num_fields,
 	};
 
@@ -175,6 +175,22 @@ int check_update_fields_msg(struct spine_datapath *datapath,
 	if (*num_updates > MAX_MUTABLE_REG) {
 		spine_warn("Too many updates!: %u\n", *num_updates);
 		return LIBCCP_UPDATE_TOO_MANY;
+	}
+	return sizeof(u32);
+}
+int check_measure_fields_msg(struct spine_datapath* datapath,
+                struct SpineMsgHeader* hdr, u32* measure_idx,
+							 char *buf){
+	if (hdr->Type != MEASURE) {
+		spine_warn(
+			"check_measure_fields_msg: hdr.Type != MEASURE");
+		return LIBCCP_UPDATE_TYPE_MISMATCH;
+	}
+
+	*measure_idx = (u32)*buf;
+	if (*measure_idx < 0) {
+		spine_warn("try to fecth invalid measurements")
+		return -1;
 	}
 	return sizeof(u32);
 }
