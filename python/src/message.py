@@ -12,6 +12,7 @@ INSTALL_EXPR = 2
 UPDATE_FIELDS = 3
 CHANGE_PROG = 4
 READY = 5
+RELEASE = 6
 # spine message types
 STATE = 6
 PARAM = 7
@@ -37,6 +38,21 @@ SPINE_CREATE_LEN = 88
 # read u32 from big endian
 # raw: AB CD EF GH -> Big endian: GH EF CD AB
 # mid little endian: EF GH AB CD 
+
+def u64_from_bytes(bytes):
+    # Full big endian: 
+    tmp = struct.unpack("<I", bytes)[0]
+    b1 = tmp & 0xff00000000000000 
+    b2 = tmp & 0x00ff000000000000 
+    b3 = tmp & 0x0000ff0000000000 
+    b4 = tmp & 0x000000ff00000000  
+    b5 = tmp & 0x00000000ff000000 
+    b6 = tmp & 0x0000000000ff0000 
+    b7 = tmp & 0x000000000000ff00 
+    b8 = tmp & 0x00000000000000ff  
+    return (b1 >> 8) + (b2 << 8) + (b3 >> 8) + (b4 << 8) + (b5 >> 8) + (b6 << 8) + (b7 >> 8) + (b8 << 8)
+
+
 def u32_from_bytes(bytes):
     # Full big endian: 
     tmp = struct.unpack("<I", bytes)[0]
@@ -117,6 +133,33 @@ class CreateMsg(object):
         self.dst_port = int(u32_from_bytes(buf[20:24]))
         # remaining part is char array
         self.congAlg = buf[self.int_len :].decode()
+        return self
+
+
+
+class StateMsg(object):
+    def __init__(self):
+        self.msg_fields_len = 4 * 2
+        self.int_raw_format = "<II"
+        self.int_len = struct.calcsize(self.int_raw_format)
+
+        self.program_id = 0
+        self.field_num = 0
+        self.data = []
+
+        # max 64 bytes
+        self.congAlg = ""
+
+    def from_raw(self, buf):
+        # first process message
+        if len(buf) < self.msg_len:
+            log.error("message length too small")
+            
+        self.program_id =  u32_from_bytes(buf[0:4])
+        self.field_num =  u32_from_bytes(buf[4:8])
+        
+        for i in range(self.field_num):
+            self.data.append(u64_from_bytes(buf[self.int_len + i * 8:self.int_len + (i + 1) * 8]))
         return self
 
 

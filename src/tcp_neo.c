@@ -275,39 +275,42 @@ void neo_process(struct sock *sk)
  * The state the kernel can provide as integers:
  *     delivered, last_delivered, lost, last_loss, rate, last_rate, RTT diff, 
  *
+ * ps: For now request_index is not used, just fetch the lastest MI.
  */
 
-static *u64 neo_get_state(struct spine_connection *conn, u64 *params,
-			  u8 num_fields)
+void neo_fetch_measurements(struct spine_connection *conn,
+				   u64 *measurements, u8 *num_fields,
+				   u32 request_index)
 {
 	struct sock *sk;
 	get_sock_from_spine(&sk, conn);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct neo_data *neo = inet_csk_ca(sk);
+	num_fields = 8;
 	if (neo->first_circle and neo->receive_index < 2) {
-		params[0] = 0;
-		params[1] = 0;
-		params[2] = 0;
-		params[3] = 0;
-		params[4] = 0;
-		params[5] = 0;
-		params[6] = 0;
-		params[7] = 0;
+		measurements[0] = 0;
+		measurements[1] = 0;
+		measurements[2] = 0;
+		measurements[3] = 0;
+		measurements[4] = 0;
+		measurements[5] = 0;
+		measurements[6] = 0;
+		measurements[7] = 0;
 		return;
 	}
 	int last_received_id = get_previous_index(
 		neo->receive_index) int last_last_received_id =
 		get_previous_index(last_received_id);
 
-	params[0] = neo->intervals[last_received_id].delivered;
-	params[1] = neo->intervals[last_last_received_id].delivered;
-	params[2] = neo->intervals[last_received_id].loss;
-	params[3] = neo->intervals[last_last_received_id].loss;
-	params[4] = neo->intervals[last_received_id].rate;
-	params[5] = neo->intervals[last_last_received_id].rate;
-	params[6] = neo->intervals[last_received_id].end_rtt -
+	measurements[0] = neo->intervals[last_received_id].delivered;
+	measurements[1] = neo->intervals[last_last_received_id].delivered;
+	measurements[2] = neo->intervals[last_received_id].loss;
+	measurements[3] = neo->intervals[last_last_received_id].loss;
+	measurements[4] = neo->intervals[last_received_id].rate;
+	measurements[5] = neo->intervals[last_last_received_id].rate;
+	measurements[6] = neo->intervals[last_received_id].end_rtt -
 		    neo->intervals[last_received_id].start_rtt;
-	params[7] = neo->intervals[last_received_id].send_end -
+	measurements[7] = neo->intervals[last_received_id].send_end -
 		    neo->intervals[last_received_id].send_start;
 }
 
@@ -572,8 +575,8 @@ static int __init neo_register(void)
 	}
 	kernel_datapath->log = &spine_log;
 	kernel_datapath->set_params = &neo_set_params;
+	kernel_datapath->fetch_measurements = &neo_fetch_measurements;
 	kernel_datapath->send_msg = &nl_sendmsg;
-	kernel_datapath->fetch_measurements = &neo_get_state;
 
 	/* Here we need to add a IPC for receiving messages from user space 
 	 * RL controller.

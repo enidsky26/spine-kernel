@@ -43,7 +43,8 @@ class MessageType(Enum):
     END = 2  # episode end
     ALIVE = 3  # alive status
     OBSERVE = 4  # observe the world
-    TERMINATE = 5  # terminate the env
+    TERMINATE = 5  # terminate the env\\
+    MEASURE = 6
 
 
 def build_unix_sock(unix_file):
@@ -94,6 +95,12 @@ def read_netlink_message(nl_sock: Netlink):
     elif hdr.type == READY:
         log.info("Spine kernel is ready!!")
     elif hdr.type == MEASURE:
+        msg = StateMsg()
+        msg.from_raw(hdr_raw[hdr.hdr_len :])
+        jdata = json.dumps(msg.data)
+        unix_sock.write(jdata, header=True)
+        
+    elif hdr.type == RELEASE:        
         # flow release
         sock_id = hdr.sock_id
         # we just remove the cached items
@@ -138,6 +145,15 @@ def read_unix_message(unix_sock: IPCSocket):
         # remove cached items
         env_flows.release_port_to_env(port)
         return ReturnStatus.Cancel
+    
+    elif msg_type == MessageType.MEASURE.value:
+        # we need the dsr_port id to remove the cache
+        sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
+        assert nl_send != None
+        if data["request_id"] is None:
+            return ReturnStatus.Continue
+        nl_send(data["request_id"], nl_sock, sock_id)
+        return ReturnStatus.Continue
     # message should be ALIVE
     if msg_type != MessageType.ALIVE.value:
         log.error("Incorrect message type: {}".format(msg_type))

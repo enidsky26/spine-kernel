@@ -39,6 +39,7 @@ class MessageType(Enum):
     ALIVE = 3  # alive status
     OBSERVE = 4  # observe the world
     TERMINATE = 5  # terminate the env
+    MEASURE = 6
 
 
 def build_unix_sock(unix_file):
@@ -88,13 +89,22 @@ def read_netlink_message(nl_sock: Netlink):
         return ReturnStatus.Continue
     elif hdr.type == READY:
         log.info("Spine kernel is ready!!")
-    elif hdr.type == MEASURE:
+    elif hdr.type == MEASURE:        
+        msg = StateMsg()
+        msg.from_raw(hdr_raw[hdr.hdr_len :])
+        jdata = json.dumps(msg.data)
+        unix_sock.write(jdata, header=True)
+    elif hdr.type == RELEASE:        
         # flow release
         sock_id = hdr.sock_id
         # we just remove the cached items
         env_flows.release_sock_id_to_env(sock_id)
         # env has been deregistered, do nothing
     return ReturnStatus.Continue
+    
+    
+    
+
 
 
 def read_unix_message(unix_sock: IPCSocket):
@@ -128,6 +138,15 @@ def read_unix_message(unix_sock: IPCSocket):
         port = active_flow_map.remove_flow_by_flowId(flow_id)
         # remove cached items
         env_flows.release_port_to_env(port)
+        return ReturnStatus.Continue
+    elif msg_type == MessageType.MEASURE.value:
+        # we need the dsr_port id to remove the cache
+        sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
+        port = active_flow_map.remove_flow_by_flowId(flow_id)
+        assert nl_send != None
+        if data["request_id"] is None:
+            return ReturnStatus.Continue
+        nl_send(data["request_id"], nl_sock, sock_id)
         return ReturnStatus.Continue
     # message should be ALIVE
     if msg_type != MessageType.ALIVE.value:
