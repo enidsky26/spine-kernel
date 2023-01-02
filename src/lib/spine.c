@@ -155,7 +155,7 @@ void spine_connection_free(struct spine_datapath *datapath, u16 sid)
 
 	free_spine_priv_state(conn);
 
-	msg_size = write_measure_msg(msg, REPORT_MSG_SIZE, sid, 0, 0, 0);
+	msg_size = write_release_msg(msg, RELEASE_MSG_SIZE, sid);
 	ret = datapath->send_msg(datapath, msg, msg_size);
 	if (ret < 0) {
 		if (!datapath->_in_fallback) {
@@ -238,7 +238,7 @@ int spine_invoke(struct spine_connection *conn)
 					&num_measure_fields, current_request);
 				if (num_measure_fields > 0) {
 					ret = send_measurement(
-						datapath, 1, tmp_measurements,
+						datapath, current_request, tmp_measurements,
 						num_measure_fields);
 					if (ret < 0)
 						spine_warn(
@@ -297,7 +297,7 @@ int send_conn_create(struct spine_datapath *datapath,
 	return ret;
 }
 
-int send_measurement(struct spine_connection *conn, u32 program_uid,
+int send_measurement(struct spine_connection *conn, u32 request_id,
 		     u64 *fields, u8 num_fields)
 {
 	int ret;
@@ -311,7 +311,7 @@ int send_measurement(struct spine_connection *conn, u32 program_uid,
 	}
 
 	msg_size = write_measure_msg(msg, REPORT_MSG_SIZE, conn->index,
-				     program_uid, fields, num_fields);
+				     request_id, fields, num_fields);
 	spine_trace("[sid=%d] In %s\n", conn->index, __FUNCTION__);
 	ret = conn->datapath->send_msg(datapath, msg, msg_size);
 	if (ret) {

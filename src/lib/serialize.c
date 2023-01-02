@@ -90,6 +90,34 @@ int write_ready_msg(char *buf, int bufsize, u32 id)
 	return hdr.Len;
 }
 
+int write_release_msg(char *buf, int bufsize, u32 id)
+{
+	struct SpineMsgHeader hdr;
+	int ret;
+	u16 msg_len = sizeof(struct SpineMsgHeader) + sizeof(u32);
+
+	hdr = (struct SpineMsgHeader){ .Type = RELEASE,
+				       .Len = msg_len,
+				       .SocketId = 0 };
+
+	if (bufsize < 0) {
+		return LIBCCP_BUFSIZE_NEGATIVE;
+	}
+
+	if (((u32)bufsize) < hdr.Len) {
+		return LIBCCP_BUFSIZE_TOO_SMALL;
+	}
+
+	ret = serialize_header(buf, bufsize, &hdr);
+	if (ret < 0) {
+		return ret;
+	}
+
+	buf += ret;
+	memcpy(buf, &id, sizeof(u32));
+	return hdr.Len;
+}
+
 int write_create_msg(char *buf, int bufsize, u32 sid, struct CreateMsg cr)
 {
 	struct SpineMsgHeader hdr;
@@ -125,7 +153,8 @@ int write_measure_msg(char *buf, int bufsize, u32 sid, u32 program_uid,
 {
 	int ret;
 	struct MeasureMsg ms = {
-		.program_uid = 1,
+		/* actually this program_uid is echoed request id */
+		.program_uid = program_uid,
 		.num_fields = num_fields,
 	};
 
@@ -178,19 +207,18 @@ int check_update_fields_msg(struct spine_datapath *datapath,
 	}
 	return sizeof(u32);
 }
-int check_measure_fields_msg(struct spine_datapath* datapath,
-                struct SpineMsgHeader* hdr, u32* measure_idx,
-							 char *buf){
+int check_measure_fields_msg(struct spine_datapath *datapath,
+			     struct SpineMsgHeader *hdr, u32 *measure_idx,
+			     char *buf)
+{
 	if (hdr->Type != MEASURE) {
-		spine_warn(
-			"check_measure_fields_msg: hdr.Type != MEASURE");
+		spine_warn("check_measure_fields_msg: hdr.Type != MEASURE");
 		return LIBCCP_UPDATE_TYPE_MISMATCH;
 	}
 
 	*measure_idx = (u32)*buf;
 	if (*measure_idx < 0) {
-		spine_warn("try to fecth invalid measurements")
-		return -1;
+		spine_warn("try to fecth invalid measurements") return -1;
 	}
 	return sizeof(u32);
 }

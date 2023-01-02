@@ -6,17 +6,17 @@ import struct
 from logger import logger as log
 
 # message types
-CREATE = 0
-MEASURE = 1
-INSTALL_EXPR = 2
-UPDATE_FIELDS = 3
-CHANGE_PROG = 4
-READY = 5
-RELEASE = 6
+NL_CREATE = 0
+NL_MEASURE = 1
+NL_INSTALL_EXPR = 2
+NL_UPDATE_FIELDS = 3
+NL_CHANGE_PROG = 4
+NL_READY = 5
 # spine message types
-STATE = 6
-PARAM = 7
-NEURAL_NETWORK = 8
+NL_STATE = 6
+NL_PARAM = 7
+NL_NEURAL_NETWORK = 8
+NL_RELEASE = 9
 
 # type of registers
 VOLATILE_CONTROL_REG = 8
@@ -37,40 +37,50 @@ SPINE_CREATE_LEN = 88
 
 # read u32 from big endian
 # raw: AB CD EF GH -> Big endian: GH EF CD AB
-# mid little endian: EF GH AB CD 
+# mid little endian: EF GH AB CD
+
 
 def u64_from_bytes(bytes):
-    # Full big endian: 
+    # Full big endian:
     tmp = struct.unpack("<I", bytes)[0]
-    b1 = tmp & 0xff00000000000000 
-    b2 = tmp & 0x00ff000000000000 
-    b3 = tmp & 0x0000ff0000000000 
-    b4 = tmp & 0x000000ff00000000  
-    b5 = tmp & 0x00000000ff000000 
-    b6 = tmp & 0x0000000000ff0000 
-    b7 = tmp & 0x000000000000ff00 
-    b8 = tmp & 0x00000000000000ff  
-    return (b1 >> 8) + (b2 << 8) + (b3 >> 8) + (b4 << 8) + (b5 >> 8) + (b6 << 8) + (b7 >> 8) + (b8 << 8)
+    b1 = tmp & 0xFF00000000000000
+    b2 = tmp & 0x00FF000000000000
+    b3 = tmp & 0x0000FF0000000000
+    b4 = tmp & 0x000000FF00000000
+    b5 = tmp & 0x00000000FF000000
+    b6 = tmp & 0x0000000000FF0000
+    b7 = tmp & 0x000000000000FF00
+    b8 = tmp & 0x00000000000000FF
+    return (
+        (b1 >> 8)
+        + (b2 << 8)
+        + (b3 >> 8)
+        + (b4 << 8)
+        + (b5 >> 8)
+        + (b6 << 8)
+        + (b7 >> 8)
+        + (b8 << 8)
+    )
 
 
 def u32_from_bytes(bytes):
-    # Full big endian: 
+    # Full big endian:
     tmp = struct.unpack("<I", bytes)[0]
 
-    b1 = tmp & 0xff000000 # GH
-    b2 = tmp & 0x00ff0000 # EF
-    b3 = tmp & 0x0000ff00 # CD
-    b4 = tmp & 0x000000ff # AB 
+    b1 = tmp & 0xFF000000  # GH
+    b2 = tmp & 0x00FF0000  # EF
+    b3 = tmp & 0x0000FF00  # CD
+    b4 = tmp & 0x000000FF  # AB
     return (b1 >> 8) + (b2 << 8) + (b3 >> 8) + (b4 << 8)
 
+
 def u16_from_bytes(bytes):
-    # Full big endian: 
+    # Full big endian:
     tmp = struct.unpack("<H", bytes)[0]
 
-    b1 = tmp & 0xff000000 # GH
-    b2 = tmp & 0x00ff0000 # EF
+    b1 = tmp & 0xFF000000  # GH
+    b2 = tmp & 0x00FF0000  # EF
     return (b1 >> 8) + (b2 << 8)
-
 
 
 class SpineMsgHeader(object):
@@ -136,31 +146,44 @@ class CreateMsg(object):
         return self
 
 
-
-class StateMsg(object):
+# this class deals with incoming measurment messages from kernel, rather than the outgoing one
+class MeasureMsg(object):
     def __init__(self):
         self.msg_fields_len = 4 * 2
         self.int_raw_format = "<II"
-        self.int_len = struct.calcsize(self.int_raw_format)
+        self.init_len = struct.calcsize(self.int_raw_format)
 
-        self.program_id = 0
+        self.request_id = 0
         self.field_num = 0
         self.data = []
 
-        # max 64 bytes
-        self.congAlg = ""
-
     def from_raw(self, buf):
         # first process message
-        if len(buf) < self.msg_len:
+        if len(buf) < self.init_len:
             log.error("message length too small")
-            
-        self.program_id =  u32_from_bytes(buf[0:4])
-        self.field_num =  u32_from_bytes(buf[4:8])
-        
+            return False
+
+        self.request_id = u32_from_bytes(buf[0:4])
+        self.field_num = u32_from_bytes(buf[4:8])
+
+        if len(buf) < self.init_len + int(self.field_num):
+            log.error("incomplete state message")
+            return False
+
         for i in range(self.field_num):
-            self.data.append(u64_from_bytes(buf[self.int_len + i * 8:self.int_len + (i + 1) * 8]))
-        return self
+            self.data.append(
+                u64_from_bytes(buf[self.init_len + i * 8 : self.init_len + (i + 1) * 8])
+            )
+        return True
+
+# this class deals with outgoing measurement message to kernel that requests states, not the incoming one
+class MeasureRequestMsg(object):
+    def __init__(self, request_id):
+        self.request_id = request_id
+
+    def serialize(self):
+        buf = struct.pack("<I", self.request_id)
+        return buf
 
 
 class UpdateField(object):

@@ -74,7 +74,7 @@ def read_netlink_message(nl_sock: Netlink):
     if hdr.from_raw(hdr_raw) == None:
         log.error("Failed to parse netlink header")
         return ReturnStatus.Cancel
-    if hdr.type == CREATE:
+    if hdr.type == NL_CREATE:
         msg = CreateMsg()
         msg.from_raw(hdr_raw[hdr.hdr_len :])
         flow = Flow().from_create_msg(msg, hdr)
@@ -92,15 +92,15 @@ def read_netlink_message(nl_sock: Netlink):
         # cache sockID with envid
         env_flows.bind_sock_id_to_env(flow.sock_id, env_id)
         return ReturnStatus.Continue
-    elif hdr.type == READY:
+    elif hdr.type == NL_READY:
         log.info("Spine kernel is ready!!")
-    elif hdr.type == MEASURE:
-        msg = StateMsg()
+    elif hdr.type == NL_MEASURE:
+        msg = MeasureMsg()
         msg.from_raw(hdr_raw[hdr.hdr_len :])
         jdata = json.dumps(msg.data)
         unix_sock.write(jdata, header=True)
         
-    elif hdr.type == RELEASE:        
+    elif hdr.type == NL_RELEASE:        
         # flow release
         sock_id = hdr.sock_id
         # we just remove the cached items

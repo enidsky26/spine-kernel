@@ -55,6 +55,7 @@ int serialize_header(char *buf, int bufsize, struct SpineMsgHeader *hdr);
 #define STATE 6
 #define PARAM 7
 #define NEURAL_NETWORK 8
+#define RELEASE 9
 
 // Some messages contain strings.
 #define BIGGEST_MSG_SIZE 32678
@@ -64,6 +65,8 @@ int serialize_header(char *buf, int bufsize, struct SpineMsgHeader *hdr);
 // size of report msg is approx MAX_REPORT_REG * 8 + 4 + 4
 #define REPORT_MSG_SIZE 900
 // ready message is just a u32.
+#define READY_MSG_SIZE 12
+// release message is also just a u32
 #define READY_MSG_SIZE 12
 
 // Some messages contain serialized fold instructions.
@@ -97,6 +100,9 @@ struct __attribute__((packed, aligned(4))) ReadyMsg {
  * id: The unique id of this datapath.
  */
 int write_ready_msg(char *buf, int bufsize, u32 id);
+
+/* release message: send current sid to user-space */
+int write_release_msg(char *buf, int bufsize, u32 id);
 
 /* CREATE
  * congAlg: the datapath's requested congestion control algorithm (could be overridden)

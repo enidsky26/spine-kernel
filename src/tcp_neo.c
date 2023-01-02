@@ -286,7 +286,7 @@ void neo_fetch_measurements(struct spine_connection *conn,
 	get_sock_from_spine(&sk, conn);
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct neo_data *neo = inet_csk_ca(sk);
-	num_fields = 8;
+	*num_fields = 8;
 	if (neo->first_circle and neo->receive_index < 2) {
 		measurements[0] = 0;
 		measurements[1] = 0;

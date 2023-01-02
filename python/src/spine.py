@@ -25,14 +25,15 @@ nl_sock = None
 unix_sock = None
 # kernel cc alg
 kernel_cc = None
-# message sender 
+# message sender
 nl_send = None
 # cont status of polling
 cont = threading.Event()
 env_flows = EnvFlows()
 poller = Poller()
 
-class MessageType(Enum):
+
+class UnixMessageType(Enum):
     INIT = 0  # env initialization
     START = 1  # episode start
     END = 2  # episode end
@@ -68,8 +69,8 @@ def read_netlink_message(nl_sock: Netlink):
     hdr = SpineMsgHeader()
     if hdr.from_raw(hdr_raw) == None:
         log.error("Failed to parse netlink header")
-        return ReturnStatus.Cancel
-    if hdr.type == CREATE:
+
+    if hdr.type == NL_CREATE:
         msg = CreateMsg()
         msg.from_raw(hdr_raw[hdr.hdr_len :])
         flow = Flow().from_create_msg(msg, hdr)
@@ -87,24 +88,23 @@ def read_netlink_message(nl_sock: Netlink):
         # cache sockID with envid
         env_flows.bind_sock_id_to_env(flow.sock_id, env_id)
         return ReturnStatus.Continue
-    elif hdr.type == READY:
+    elif hdr.type == NL_READY:
         log.info("Spine kernel is ready!!")
-    elif hdr.type == MEASURE:        
-        msg = StateMsg()
+    elif hdr.type == NL_MEASURE:
+        msg = MeasureMsg()
         msg.from_raw(hdr_raw[hdr.hdr_len :])
-        jdata = json.dumps(msg.data)
-        unix_sock.write(jdata, header=True)
-    elif hdr.type == RELEASE:        
+        msg_to_unix = {}
+        msg_to_unix["type"] = UnixMessageType.MEASURE
+        msg_to_unix["data"] = msg.data
+        msg_to_unix["request_id"] = msg.request_id
+        unix_sock.write(json.dumps(msg_to_unix), header=True)
+    elif hdr.type == NL_RELEASE:
         # flow release
         sock_id = hdr.sock_id
         # we just remove the cached items
         env_flows.release_sock_id_to_env(sock_id)
         # env has been deregistered, do nothing
     return ReturnStatus.Continue
-    
-    
-    
-
 
 
 def read_unix_message(unix_sock: IPCSocket):
@@ -121,35 +121,35 @@ def read_unix_message(unix_sock: IPCSocket):
         log.warn("env {} has not registered.".format(env_id))
         return ReturnStatus.Continue
 
-    if msg_type == MessageType.START.value:
+    if msg_type == UnixMessageType.START.value:
         port = int(data["dst_port"])
         # we also need to record the corresponce of env_id and dst_port
         env_flows.bind_port_to_env(port, env_id)
         active_flow_map.add_flow_with_dst_port(port, flow_id)
         return ReturnStatus.Continue
-    elif msg_type == MessageType.TERMINATE.value:
+    elif msg_type == UnixMessageType.TERMINATE.value:
         active_flow_map.remove_all_env_flows()
         # deregister env
         env_flows.release_env(env_id)
         return ReturnStatus.Cancel
-    elif msg_type == MessageType.END.value:
+    elif msg_type == UnixMessageType.END.value:
         # we need the dsr_port id to remove the cache
         sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
         port = active_flow_map.remove_flow_by_flowId(flow_id)
         # remove cached items
         env_flows.release_port_to_env(port)
         return ReturnStatus.Continue
-    elif msg_type == MessageType.MEASURE.value:
+    elif msg_type == UnixMessageType.MEASURE.value:
         # we need the dsr_port id to remove the cache
         sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
         port = active_flow_map.remove_flow_by_flowId(flow_id)
         assert nl_send != None
         if data["request_id"] is None:
             return ReturnStatus.Continue
-        nl_send(data["request_id"], nl_sock, sock_id)
+        nl_send(data["request_id"], nl_sock, sock_id, msg_type=NL_MEASURE)
         return ReturnStatus.Continue
     # message should be ALIVE
-    if msg_type != MessageType.ALIVE.value:
+    if msg_type != UnixMessageType.ALIVE.value:
         log.error("Incorrect message type: {}".format(msg_type))
         return ReturnStatus.Cancel
     # lookup sock id by flow_id
@@ -173,7 +173,7 @@ def accept_unix_conn(unix_sock: IPCSocket, poller: Poller):
     message = client.read()
     message = json.loads(message)
     info = int(message.get("type", -1))
-    if info != MessageType.INIT.value:
+    if info != UnixMessageType.INIT.value:
         log.error("Incorrect message type: {}, ignore this".format(info))
         return ReturnStatus.Continue
     # accept new conn and register to poller
