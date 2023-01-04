@@ -96,8 +96,9 @@ get_spine_priv_state(struct spine_connection *conn);
 int send_conn_create(struct spine_datapath *datapath,
 		     struct spine_connection *conn);
 
-int send_measurement(struct spine_datapath *datapath, u32 program_uid,
-		      u64 *fields, u8 num_fields);
+int send_measurement(struct spine_connection *conn, u32 request_id,
+		     u64 *fields, u8 num_fields);
+			  
 
 void free_spine_priv_state(struct spine_connection *conn);
 

@@ -68,3 +68,15 @@ def send_vanilla_message(msg_data: dict, nl_sock: Netlink, sock_id, msg_type=Non
         msg_raw = msg.serialize()
         nl_hdr.create(NL_MEASURE, len(msg_raw) + nl_hdr.hdr_len, sock_id)
         nl_sock.send_msg(nl_hdr.serialize() + msg_raw)
+        
+        
+def send_neo_message(msg_data: dict, nl_sock: Netlink, sock_id, msg_type=None):
+    nl_hdr = SpineMsgHeader()
+    assert(msg_type == NL_MEASURE)
+    if not "request_id" in msg_data:
+        log.error("No request id for MEASURE message")
+        return
+    msg = MeasureRequestMsg(int(msg_data["request_id"]))
+    msg_raw = msg.serialize()
+    nl_hdr.create(NL_MEASURE, len(msg_raw) + nl_hdr.hdr_len, sock_id)
+    nl_sock.send_msg(nl_hdr.serialize() + msg_raw)

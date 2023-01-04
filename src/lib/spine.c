@@ -238,7 +238,7 @@ int spine_invoke(struct spine_connection *conn)
 					&num_measure_fields, current_request);
 				if (num_measure_fields > 0) {
 					ret = send_measurement(
-						datapath, current_request, tmp_measurements,
+						conn, current_request, tmp_measurements,
 						num_measure_fields);
 					if (ret < 0)
 						spine_warn(

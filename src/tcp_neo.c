@@ -19,7 +19,7 @@
 
 extern struct spine_datapath *kernel_datapath;
 extern struct timespec64 tzero;
-
+static int id = 0;
 struct neo_interval {
 	u64 rate; /* sending rate of this interval, bytes/sec */
 
@@ -127,12 +127,11 @@ void neo_calculate_and_set_rate(struct sock *sk, struct neo_data *neo,
 		rate_sum += neo->intervals[idx].rate;
 		idx = get_next_index(idx);
 		num++;
-	} while (idx != send_idx) new_rate =
-		neo->ready_rate * (num + 1) - rate_sum;
-
+	} while (idx != send_idx);
+	new_rate = neo->ready_rate * (num + 1) - rate_sum;
 	new_rate = max(new_rate, NEO_RATE_MIN);
-	new_rate = new_rate(rate, sk->sk_max_pacing_rate);
-	interval.rate = new_rate;
+	new_rate = min(new_rate, sk->sk_max_pacing_rate);
+	interval->rate = new_rate;
 	sk->sk_pacing_rate = new_rate;
 }
 
@@ -287,7 +286,7 @@ void neo_fetch_measurements(struct spine_connection *conn,
 	struct tcp_sock *tp = tcp_sk(sk);
 	struct neo_data *neo = inet_csk_ca(sk);
 	*num_fields = 8;
-	if (neo->first_circle and neo->receive_index < 2) {
+	if (neo->first_circle && neo->receive_index < 2) {
 		measurements[0] = 0;
 		measurements[1] = 0;
 		measurements[2] = 0;
@@ -298,14 +297,13 @@ void neo_fetch_measurements(struct spine_connection *conn,
 		measurements[7] = 0;
 		return;
 	}
-	int last_received_id = get_previous_index(
-		neo->receive_index) int last_last_received_id =
-		get_previous_index(last_received_id);
+	int last_received_id = get_previous_index(neo->receive_index);
+	int last_last_received_id = get_previous_index(last_received_id);
 
 	measurements[0] = neo->intervals[last_received_id].delivered;
 	measurements[1] = neo->intervals[last_last_received_id].delivered;
-	measurements[2] = neo->intervals[last_received_id].loss;
-	measurements[3] = neo->intervals[last_last_received_id].loss;
+	measurements[2] = neo->intervals[last_received_id].lost;
+	measurements[3] = neo->intervals[last_last_received_id].lost;
 	measurements[4] = neo->intervals[last_received_id].rate;
 	measurements[5] = neo->intervals[last_last_received_id].rate;
 	measurements[6] = neo->intervals[last_received_id].end_rtt -
@@ -373,7 +371,7 @@ static void neo_release(struct sock *sk)
 	} else {
 		pr_info("already freed");
 	}
-
+	id--;
 	kfree(ca->intervals);
 }
 

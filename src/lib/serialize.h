@@ -64,10 +64,11 @@ int serialize_header(char *buf, int bufsize, struct SpineMsgHeader *hdr);
 #define CREATE_MSG_SIZE 96
 // size of report msg is approx MAX_REPORT_REG * 8 + 4 + 4
 #define REPORT_MSG_SIZE 900
+
 // ready message is just a u32.
 #define READY_MSG_SIZE 12
 // release message is also just a u32
-#define READY_MSG_SIZE 12
+#define RELEASE_MSG_SIZE 12
 
 // Some messages contain serialized fold instructions.
 #define MAX_EXPRESSIONS 256 // arbitrary TODO: make configurable

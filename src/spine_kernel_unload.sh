@@ -1,6 +1,6 @@
 #!/bin/bash
 
-module=${1:-"vanilla"}
+module=${1:-"neo"}
 
 if [ "$EUID" -ne 0 ]; then 
     echo "error: must run as root"
