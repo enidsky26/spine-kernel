@@ -156,6 +156,12 @@ void spine_connection_free(struct spine_datapath *datapath, u16 sid)
 	free_spine_priv_state(conn);
 
 	msg_size = write_release_msg(msg, RELEASE_MSG_SIZE, sid);
+
+	if (msg_size < 0) {
+		spine_error("cannot prepare release message");
+		return;
+	}
+
 	ret = datapath->send_msg(datapath, msg, msg_size);
 	if (ret < 0) {
 		if (!datapath->_in_fallback) {
@@ -182,6 +188,9 @@ int spine_invoke(struct spine_connection *conn)
 	u64 tmp_measurements[MAX_MEASUREMENT_FIELDS];
 	u32 current_request;
 
+	char print_buf[1024];
+	int write_len = 0;
+
 	spine_trace("Entering %s\n", __FUNCTION__);
 	if (conn == NULL) {
 		return SPINE_NULL_ARG;
@@ -189,6 +198,7 @@ int spine_invoke(struct spine_connection *conn)
 	datapath = conn->datapath;
 	state = get_spine_priv_state(conn);
 
+	// spine_warn("Get into invoke!");
 	if (!state) {
 		spine_error("no private state for connection");
 		return SPINE_NULL_ARG;
@@ -226,27 +236,32 @@ int spine_invoke(struct spine_connection *conn)
 	if (num_params > 0 && datapath->set_params) {
 		datapath->set_params(conn, params, num_params);
 	}
-
 	/* process measurement requests */
-	for (i = 0; i < MAX_MEASUREMENG_REG; ++i) {
-		if (state->pending_update.measure_is_pending[i]) {
-			current_request =
-				state->pending_update.measure_registers[i];
-			if (datapath->fetch_measurements) {
-				datapath->fetch_measurements(
-					conn, tmp_measurements,
-					&num_measure_fields, current_request);
-				if (num_measure_fields > 0) {
-					ret = send_measurement(
-						conn, current_request, tmp_measurements,
-						num_measure_fields);
-					if (ret < 0)
-						spine_warn(
-							"send measurement for request %d failed",
-							current_request)
+	if (state->pending_update.measure_is_pending) {
+		current_request =
+			state->pending_update.measure_registers;
+		// spine_warn("Receive a measurement request from Unix.");
+		if (datapath->fetch_measurements) {
+			datapath->fetch_measurements(
+				conn, tmp_measurements,
+				&num_measure_fields, current_request);
+			if (num_measure_fields > 0) {
+				// spine_warn("Send collected measurements.");
+				for (i = 0; i < num_measure_fields; i++){
+					write_len += snprintf(print_buf + write_len, 100, "%llu, ", tmp_measurements[i]);
 				}
+				ret = send_measurement(
+					conn, current_request,
+					tmp_measurements,
+					num_measure_fields);
+				if (ret < 0)
+					spine_warn(
+						"send measurement for request %d failed",
+						current_request)
 			}
 		}
+		// clear measure request flag
+		state->pending_update.measure_is_pending = false;
 	}
 
 	// clear staged status
@@ -297,8 +312,8 @@ int send_conn_create(struct spine_datapath *datapath,
 	return ret;
 }
 
-int send_measurement(struct spine_connection *conn, u32 request_id,
-		     u64 *fields, u8 num_fields)
+int send_measurement(struct spine_connection *conn, u32 request_id, u64 *fields,
+		     u8 num_fields)
 {
 	int ret;
 	char msg[REPORT_MSG_SIZE];
@@ -367,18 +382,9 @@ int stage_measure_request(struct spine_datapath *datapath,
 	int i;
 
 	/* find the first available regs to store the measures request index */
-	for (i = 0; i < MAX_MEASUREMENG_REG; i++) {
-		if (!pending_update->measure_is_pending[i]) {
-			pending_update->measure_is_pending[i] = true;
-			pending_update->measure_registers[i] = measure_idx;
-			return SPINE_OK;
-		}
-	}
-	/* too many request that has not been processes*/
-	spine_warn(
-		"too many requests to be processed, cannot server measure: %lu",
-		measure_idx);
-	return SPINE_ERROR;
+	pending_update->measure_is_pending = true;
+	pending_update->measure_registers = measure_idx;
+	return SPINE_OK;
 }
 
 /* Read parameters from user-space RL algorithm

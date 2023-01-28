@@ -75,11 +75,11 @@ int serialize_header(char *buf, int bufsize, struct SpineMsgHeader *hdr);
 #define MAX_INSTRUCTIONS 256 // arbitrary, TODO: make configurable
 #define MAX_IMPLICIT_REG 6 // fixed number of implicit registers
 #define MAX_REPORT_REG 110 // measure msg 110 * 8 + 4 + 4
-#define MAX_CONTROL_REG 110 // arbitrary
+#define MAX_CONTROL_REG 20 // arbitrary
 #define MAX_TMP_REG 8
 #define MAX_LOCAL_REG 8
 #define MAX_MUTABLE_REG 222 // # report + # control + cwnd, rate registers
-#define MAX_MEASUREMENG_REG 110
+#define MAX_MEASUREMENG_REG 1
 #define MAX_MEASUREMENT_FIELDS 16
 
 struct __attribute__((packed, aligned(4))) StateMsg {

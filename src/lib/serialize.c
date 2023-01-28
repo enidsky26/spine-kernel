@@ -35,6 +35,8 @@ int read_header(struct SpineMsgHeader *hdr, char *buf)
 		return sizeof(struct SpineMsgHeader);
 	case UPDATE_FIELDS:
 		return sizeof(struct SpineMsgHeader);
+	case MEASURE:
+		return sizeof(struct SpineMsgHeader);
 	default:
 		return -1;
 	}
@@ -49,8 +51,10 @@ int serialize_header(char *buf, int bufsize, struct SpineMsgHeader *hdr)
 	case STATE:
 	case MEASURE:
 	case READY:
+	case RELEASE:
 		break;
 	default:
+		printk("[spine] Unknown message type, cannot serialize header");
 		return -1;
 	}
 

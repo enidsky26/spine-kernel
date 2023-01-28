@@ -23,6 +23,7 @@ import msg_sender
 nl_sock = None
 # communication between spine-user-space and Env
 unix_sock = None
+client_from_sock = dict()
 # kernel cc alg
 kernel_cc = None
 # message sender
@@ -91,13 +92,19 @@ def read_netlink_message(nl_sock: Netlink):
     elif hdr.type == NL_READY:
         log.info("Spine kernel is ready!!")
     elif hdr.type == NL_MEASURE:
+        sock_id = hdr.sock_id
+        # print("get a new measure from sock id:", sock_id, client_from_sock[sock_id])
         msg = MeasureMsg()
         msg.from_raw(hdr_raw[hdr.hdr_len :])
         msg_to_unix = {}
-        msg_to_unix["type"] = UnixMessageType.MEASURE
+        msg_to_unix["type"] = UnixMessageType.MEASURE.value
         msg_to_unix["data"] = msg.data
         msg_to_unix["request_id"] = msg.request_id
-        unix_sock.write(json.dumps(msg_to_unix), header=True)
+        client_sock = client_from_sock[sock_id]
+        sent = client_sock.write(json.dumps(msg_to_unix))
+        if sent == 0:
+            print("Nothing sent...")
+        # print("write to unix.")
     elif hdr.type == NL_RELEASE:
         # flow release
         sock_id = hdr.sock_id
@@ -142,9 +149,14 @@ def read_unix_message(unix_sock: IPCSocket):
     elif msg_type == UnixMessageType.MEASURE.value:
         # we need the dsr_port id to remove the cache
         sock_id = active_flow_map.get_sockId_by_flowId(flow_id)
-        port = active_flow_map.remove_flow_by_flowId(flow_id)
+        client_from_sock[sock_id] = unix_sock # cache the client socket
+        # print("get a new measure request from unix! update the sock dict:", sock_id, unix_sock)
         assert nl_send != None
         if data["request_id"] is None:
+            return ReturnStatus.Continue
+        # we generally don't need request-id to align request and reply, as the neo_get_state is blocking.
+        if sock_id == None:
+            print("Warning: a none sock_id")
             return ReturnStatus.Continue
         nl_send(data["request_id"], nl_sock, sock_id, msg_type=NL_MEASURE)
         return ReturnStatus.Continue

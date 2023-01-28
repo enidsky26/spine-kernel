@@ -31,6 +31,9 @@ VANILLA_BETA_REG = 1
 VANILLA_GAMMA_REG = 2
 VANILLA_DELTA_REG = 3
 
+# registers for Neo Parameters
+NEO_ACTION_REG = 0
+
 # some length of message
 SPINE_HEADER_LEN = 8
 SPINE_CREATE_LEN = 88
@@ -66,7 +69,6 @@ def u64_from_bytes(bytes):
 def u32_from_bytes(bytes):
     # Full big endian:
     tmp = struct.unpack("<I", bytes)[0]
-
     b1 = tmp & 0xFF000000  # GH
     b2 = tmp & 0x00FF0000  # EF
     b3 = tmp & 0x0000FF00  # CD
@@ -162,17 +164,16 @@ class MeasureMsg(object):
         if len(buf) < self.init_len:
             log.error("message length too small")
             return False
-
-        self.request_id = u32_from_bytes(buf[0:4])
-        self.field_num = u32_from_bytes(buf[4:8])
-
-        if len(buf) < self.init_len + int(self.field_num):
+        self.request_id = struct.unpack("<I", buf[0:4])[0]
+        self.field_num = struct.unpack("<I", buf[4:8])[0]
+        
+        if len(buf) < self.init_len + int(self.field_num) * 8:
             log.error("incomplete state message")
             return False
 
         for i in range(self.field_num):
             self.data.append(
-                u64_from_bytes(buf[self.init_len + i * 8 : self.init_len + (i + 1) * 8])
+                struct.unpack("<Q", buf[self.init_len + i * 8 : self.init_len + (i + 1) * 8])[0]
             )
         return True
 

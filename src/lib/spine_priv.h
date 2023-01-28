@@ -78,8 +78,8 @@
 struct staged_update {
 	bool control_is_pending[MAX_CONTROL_REG];
 	u64 control_registers[MAX_CONTROL_REG];
-	bool measure_is_pending[MAX_MEASUREMENG_REG];
-	u64 measure_registers[MAX_MEASUREMENG_REG];
+	bool measure_is_pending;
+	u64 measure_registers;
 };
 
 struct spine_priv_state {
