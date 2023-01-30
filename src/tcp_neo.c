@@ -369,10 +369,10 @@ void neo_fetch_measurements(struct spine_connection *conn,
 	measurements[5] = neo->intervals[last_last_received_id].rate;
 	measurements[6] = neo->intervals[last_received_id].end_rtt;
 	measurements[7]	= neo->intervals[last_received_id].start_rtt;
-	measurements[8] = neo->intervals[last_received_id].send_end -
-		    neo->intervals[last_received_id].send_start;	
-	measurements[9] = neo->intervals[last_last_received_id].send_end -
-		    neo->intervals[last_last_received_id].send_start;	
+	measurements[8] = neo->intervals[last_received_id].recv_end -
+		    neo->intervals[last_received_id].recv_start;	
+	measurements[9] = neo->intervals[last_last_received_id].recv_end-
+		    neo->intervals[last_last_received_id].recv_start;	
 }
 
 /**
