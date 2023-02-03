@@ -365,8 +365,8 @@ void neo_fetch_measurements(struct spine_connection *conn,
 	measurements[1] = neo->intervals[last_last_received_id].delivered;
 	measurements[2] = neo->intervals[last_received_id].lost;
 	measurements[3] = neo->intervals[last_last_received_id].lost;
-	measurements[4] = neo->intervals[last_received_id].rate;
-	measurements[5] = neo->intervals[last_last_received_id].rate;
+	measurements[4] = neo->intervals[last_received_id].packets_ended - neo->intervals[last_received_id].packets_sent_base;
+	measurements[5] = neo->intervals[last_last_received_id].packets_ended -  neo->intervals[last_last_received_id].packets_sent_base; 
 	measurements[6] = neo->intervals[last_received_id].end_rtt;
 	measurements[7]	= neo->intervals[last_received_id].start_rtt;
 	measurements[8] = neo->intervals[last_received_id].recv_end -
@@ -448,8 +448,18 @@ static void neo_init(struct sock *sk)
 
 	id++;
 	ca->id = id;
+<<<<<<< HEAD
 	ca->rate = NEO_RATE_MIN * 512;
 	ca->ready_rate = NEO_RATE_MIN * 512;
+=======
+	tp->snd_cwnd = 64; // init value
+	ca->cwnd = tp->snd_cwnd;
+	ca->ready_cwnd = tp->snd_cwnd;
+	// ca->rate = NEO_RATE_MIN * 512;
+	// ca->ready_rate = NEO_RATE_MIN * 512;
+
+
+>>>>>>> 8895111 (update)
 	// ca->last_used_cwnd = 10U;
 
 	ca->send_index = 0;
