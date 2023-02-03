@@ -448,18 +448,8 @@ static void neo_init(struct sock *sk)
 
 	id++;
 	ca->id = id;
-<<<<<<< HEAD
 	ca->rate = NEO_RATE_MIN * 512;
 	ca->ready_rate = NEO_RATE_MIN * 512;
-=======
-	tp->snd_cwnd = 64; // init value
-	ca->cwnd = tp->snd_cwnd;
-	ca->ready_cwnd = tp->snd_cwnd;
-	// ca->rate = NEO_RATE_MIN * 512;
-	// ca->ready_rate = NEO_RATE_MIN * 512;
-
-
->>>>>>> 8895111 (update)
 	// ca->last_used_cwnd = 10U;
 
 	ca->send_index = 0;
